@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.DS_Store
+*.local
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.local
+.turbo
+.cache
