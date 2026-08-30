@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+
+echo "🔍 Running pre-commit validation..."
+
+echo "➜ Checking types..."
+pnpm typecheck
+
+echo "➜ Linting codebase..."
+pnpm lint
+
+echo "➜ Running test suite..."
+pnpm test
+
+echo "✅ All pre-commit checks passed!"

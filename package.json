@@ -14,7 +14,8 @@
     "test:unit": "vitest run --project=unit",
     "test:integration": "vitest run --project=integration",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.79.0",
