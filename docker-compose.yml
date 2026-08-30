@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  master:
+    image: node:22-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - master-data:/root/.pm2-cluster
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      - ADMIN_USER=admin
+      - ADMIN_PASSWORD=adminpassword123
+      - JWT_SECRET=pm2-cluster-production-secret-key-ed25519
+    command: sh -c "pnpm install && pnpm build && pnpm --filter @pm2-cluster/master start"
+    ports:
+      - "3005:3005"
+    restart: unless-stopped
+
+  worker-1:
+    image: node:22-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - worker-1-data:/root/.pm2-cluster
+    environment:
+      - NODE_ENV=production
+      - MASTER_WS_URL=http://master:3005
+      - AGENT_HOSTNAME=worker-01
+      - AGENT_PORT=4321
+    command: sh -c "pnpm install && pnpm build && pnpm --filter @pm2-cluster/agent-core start"
+    ports:
+      - "4321:4321"
+    depends_on:
+      - master
+    restart: unless-stopped
+
+volumes:
+  master-data:
+  worker-1-data:
