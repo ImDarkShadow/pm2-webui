@@ -12,7 +12,7 @@ import {
   createAppError,
   TwoFactorSetupResult,
   TwoFactorStatus,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { UsersRepo } from '../db/repos/usersRepo.js';
 import { RecoveryCodesRepo } from '../db/repos/recoveryCodesRepo.js';
 
@@ -61,7 +61,7 @@ export const createTwoFactorService = (deps: TwoFactorServiceDeps): TwoFactorSer
     const otpauthUri = generateTotpUri({
       secret,
       username,
-      issuer: 'PM2 Cluster Manager',
+      issuer: 'PM2 Web UI',
     });
     const recoveryCodes = generateRecoveryCodes(8);
 

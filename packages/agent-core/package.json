@@ -1,5 +1,5 @@
 {
-  "name": "@pm2-cluster/agent-core",
+  "name": "@pm2-webui/agent-core",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pm2-cluster/shared": "workspace:*",
+    "@pm2-webui/shared": "workspace:*",
     "better-sqlite3": "^11.8.1",
     "pino": "^9.6.0",
     "pm2": "^5.4.3",

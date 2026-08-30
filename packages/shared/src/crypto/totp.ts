@@ -72,7 +72,7 @@ export const generateTotpSecret = (): string => {
  * Generates standard `otpauth://totp/...` URI for authenticator apps.
  */
 export const generateTotpUri = (options: GenerateTotpUriOptions): string => {
-  const { secret, username, issuer = 'PM2 Cluster Manager', digits = 6, period = 30 } = options;
+  const { secret, username, issuer = 'PM2 Web UI', digits = 6, period = 30 } = options;
 
   const encodedIssuer = encodeURIComponent(issuer);
   const encodedUser = encodeURIComponent(username);

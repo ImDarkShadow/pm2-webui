@@ -1,5 +1,5 @@
 import { Database as SQLiteDatabase } from 'better-sqlite3';
-import { Session, SessionInfo, Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { Session, SessionInfo, Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 export interface SessionsRepoDeps {
   readonly db: SQLiteDatabase;

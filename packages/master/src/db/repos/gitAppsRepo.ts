@@ -1,6 +1,6 @@
 import { Database as SQLiteDatabase } from 'better-sqlite3';
 import crypto from 'node:crypto';
-import { GitAppConfig, Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { GitAppConfig, Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 export interface GitAppsRepoDeps {
   readonly db: SQLiteDatabase;

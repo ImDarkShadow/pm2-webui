@@ -1,5 +1,5 @@
 import { Database as SQLiteDatabase } from 'better-sqlite3';
-import { AuditLog, Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { AuditLog, Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 export interface AuditRepoDeps {
   readonly db: SQLiteDatabase;

@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { generateEd25519KeyPair } from '@pm2-cluster/shared';
-import { createAgentCore } from '@pm2-cluster/agent-core';
+import { generateEd25519KeyPair } from '@pm2-webui/shared';
+import { createAgentCore } from '@pm2-webui/agent-core';
 import {
   createMasterDatabase,
   createUsersRepo,
@@ -252,7 +252,7 @@ describe('Master REST API & Server Integration', () => {
     expect(setupBody.recoveryCodes).toHaveLength(8);
 
     // 3. Enable 2FA with generated TOTP code
-    const { generateTotpCode } = await import('@pm2-cluster/shared');
+    const { generateTotpCode } = await import('@pm2-webui/shared');
     const validCode = generateTotpCode(setupBody.secret);
 
     const enableRes = await server.fastify.inject({

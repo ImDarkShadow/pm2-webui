@@ -13,7 +13,7 @@ import {
 import { createLogEngine } from './logging/index.js';
 import { createPm2Manager } from './pm2/index.js';
 import { createAgentCore } from './createAgentCore.js';
-import { generateEd25519KeyPair, LogLine } from '@pm2-cluster/shared';
+import { generateEd25519KeyPair, LogLine } from '@pm2-webui/shared';
 
 describe('Agent Core Backend Integration', () => {
   let tempDir: string;

@@ -2,7 +2,7 @@
 set -e
 
 # ==============================================================================
-# PM2 Cluster Manager — Automated Worker Node Installer
+# PM2 Web UI — Automated Worker Node Installer
 # ==============================================================================
 # Quick Install:
 #   curl -fsSL http://<master-ip>:3005/install.sh | bash
@@ -22,7 +22,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${SKY}${BOLD}======================================================${NC}"
-echo -e "${SKY}${BOLD}   PM2 Cluster Manager — Worker Node Installer        ${NC}"
+echo -e "${SKY}${BOLD}   PM2 Web UI — Worker Node Installer        ${NC}"
 echo -e "${SKY}${BOLD}======================================================${NC}\n"
 
 # Default configuration
@@ -31,7 +31,7 @@ MASTER_URL="$DEFAULT_MASTER"
 JOIN_TOKEN="${JOIN_TOKEN:-}"
 AGENT_HOSTNAME="${AGENT_HOSTNAME:-$(hostname)}"
 AGENT_PORT="${AGENT_PORT:-4321}"
-INSTALL_DIR="/opt/pm2-cluster-agent"
+INSTALL_DIR="/opt/pm2-webui-agent"
 
 # Parse CLI arguments
 while [[ $# -gt 0 ]]; do
@@ -137,11 +137,11 @@ echo -e "${GREEN}✓ Environment configuration saved to ${INSTALL_DIR}/.env${NC}
 
 # Register Systemd Service if systemctl is available
 if command -v systemctl &> /dev/null; then
-    echo -e "\n3. Configuring Systemd service (pm2-cluster-agent.service)..."
-    SERVICE_FILE="/etc/systemd/system/pm2-cluster-agent.service"
+    echo -e "\n3. Configuring Systemd service (pm2-webui-agent.service)..."
+    SERVICE_FILE="/etc/systemd/system/pm2-webui-agent.service"
     
     SERVICE_CONTENT="[Unit]
-Description=PM2 Cluster Worker Agent
+Description=PM2 Web UI Worker Agent
 After=network.target
 
 [Service]
@@ -149,7 +149,7 @@ Type=simple
 User=$(whoami)
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=$(which npx) @pm2-cluster/agent-core
+ExecStart=$(which npx) pm2-webui agent
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
@@ -160,18 +160,18 @@ WantedBy=multi-user.target"
     if [ "$EUID" -eq 0 ]; then
         echo "$SERVICE_CONTENT" > "$SERVICE_FILE"
         systemctl daemon-reload
-        systemctl enable pm2-cluster-agent
-        systemctl restart pm2-cluster-agent || true
+        systemctl enable pm2-webui-agent
+        systemctl restart pm2-webui-agent || true
     else
         echo "$SERVICE_CONTENT" | sudo tee "$SERVICE_FILE" > /dev/null
         sudo systemctl daemon-reload
-        sudo systemctl enable pm2-cluster-agent
-        sudo systemctl restart pm2-cluster-agent || true
+        sudo systemctl enable pm2-webui-agent
+        sudo systemctl restart pm2-webui-agent || true
     fi
-    echo -e "${GREEN}✓ Systemd service 'pm2-cluster-agent' enabled and started.${NC}"
+    echo -e "${GREEN}✓ Systemd service 'pm2-webui-agent' enabled and started.${NC}"
 else
     echo -e "\n3. Starting Agent in background..."
-    nohup npx @pm2-cluster/agent-core > "$INSTALL_DIR/agent.log" 2>&1 &
+    nohup npx pm2-webui agent > "$INSTALL_DIR/agent.log" 2>&1 &
     echo -e "${GREEN}✓ Worker agent started (PID: $!). Logs written to ${INSTALL_DIR}/agent.log${NC}"
 fi
 
@@ -179,4 +179,4 @@ echo -e "\n${GREEN}${BOLD}======================================================
 echo -e "${GREEN}${BOLD}   Worker Node connected successfully!                ${NC}"
 echo -e "${GREEN}${BOLD}======================================================${NC}"
 echo -e "Dashboard: ${SKY}${MASTER_URL}${NC}"
-echo -e "Check Status: ${SKY}systemctl status pm2-cluster-agent${NC} or in the Web UI.\n"
+echo -e "Check Status: ${SKY}systemctl status pm2-webui-agent${NC} or in the Web UI.\n"

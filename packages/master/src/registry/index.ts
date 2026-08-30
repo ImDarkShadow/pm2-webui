@@ -11,7 +11,7 @@ import {
   HandshakeInitPayload,
   HandshakeChallengePayload,
   HandshakeAckPayload,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { NodesRepo } from '../db/repos/nodesRepo.js';
 import { AuditRepo } from '../db/repos/auditRepo.js';
 

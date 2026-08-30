@@ -6,7 +6,7 @@ import {
   LogLine,
   WSMessageType,
   WSMessage,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { AgentMetaRepo } from '../db/repos/agentMetaRepo.js';
 
 export interface AgentWsServerDeps {

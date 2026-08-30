@@ -9,7 +9,7 @@ import {
   ok,
   err,
   createAppError,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { Pm2Manager } from '../pm2/index.js';
 import { syncGitRepo, exportGitRelease, runShellCommand, CommitInfo } from './git.js';
 

@@ -1,6 +1,6 @@
 import { spawn, execSync } from 'node:child_process';
 import fs from 'node:fs';
-import { Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 export interface CommitInfo {
   readonly hash: string;

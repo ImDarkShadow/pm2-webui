@@ -30,21 +30,21 @@ export const ConnectWorkerModal: React.FC<ConnectWorkerModalProps> = ({ isOpen, 
 
   const npxCommand = `MASTER_WS_URL="${cleanMasterUrl}"${
     cleanToken ? ` JOIN_TOKEN="${cleanToken}"` : ''
-  }${cleanName ? ` AGENT_HOSTNAME="${cleanName}"` : ''} npx @pm2-cluster/agent-core`;
+  }${cleanName ? ` AGENT_HOSTNAME="${cleanName}"` : ''} npx pm2-webui agent`;
 
   const systemdService = `[Unit]
-Description=PM2 Cluster Worker Agent
+Description=PM2 Web UI Worker Agent
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/pm2-cluster-agent
+WorkingDirectory=/opt/pm2-webui
 Environment="MASTER_WS_URL=${cleanMasterUrl}"${
     cleanToken ? `\nEnvironment="JOIN_TOKEN=${cleanToken}"` : ''
   }${cleanName ? `\nEnvironment="AGENT_HOSTNAME=${cleanName}"` : ''}
 Environment="NODE_ENV=production"
-ExecStart=/usr/bin/npx @pm2-cluster/agent-core
+ExecStart=/usr/bin/npx pm2-webui agent
 Restart=always
 RestartSec=5
 

@@ -1,4 +1,4 @@
-import { Result, ok } from '@pm2-cluster/shared';
+import { Result, ok } from '@pm2-webui/shared';
 import { AgentMetricsRepo } from './repos/agentMetricsRepo.js';
 import { AgentLogsRepo } from './repos/agentLogsRepo.js';
 import { AgentCrashRepo } from './repos/agentCrashRepo.js';

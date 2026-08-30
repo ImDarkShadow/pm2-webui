@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProcessGitInfo } from '@pm2-cluster/shared';
+import { ProcessGitInfo } from '@pm2-webui/shared';
 
 interface GitCacheEntry {
   readonly timestamp: number;

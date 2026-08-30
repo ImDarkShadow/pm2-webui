@@ -7,7 +7,7 @@ import {
   ok,
   err,
   createAppError,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { AgentLogsRepo, StoredLogSummary } from '../db/repos/agentLogsRepo.js';
 import { AgentCrashRepo } from '../db/repos/agentCrashRepo.js';
 

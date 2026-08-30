@@ -17,7 +17,7 @@ export interface AgentConfig {
 
 export const loadAgentConfig = (overrides: Partial<AgentConfig> = {}): AgentConfig => {
   const defaultDataDir =
-    process.env.AGENT_DATA_DIR || path.join(os.homedir(), '.pm2-cluster', 'agent');
+    process.env.AGENT_DATA_DIR || path.join(os.homedir(), '.pm2-webui', 'agent');
 
   return {
     agentId: process.env.AGENT_ID || overrides.agentId,

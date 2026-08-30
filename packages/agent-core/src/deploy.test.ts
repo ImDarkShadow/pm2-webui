@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createDeployEngine } from './deploy/engine.js';
-import { GitAppConfig } from '@pm2-cluster/shared';
+import { GitAppConfig } from '@pm2-webui/shared';
 
 describe('DeployEngine', () => {
   let tmpDir: string;

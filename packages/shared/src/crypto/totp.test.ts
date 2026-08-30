@@ -12,10 +12,10 @@ import {
 
 describe('RFC 6238 TOTP Cryptography', () => {
   it('encodes and decodes Base32 accurately', () => {
-    const original = Buffer.from('Hello PM2 Cluster World!', 'utf8');
+    const original = Buffer.from('Hello PM2 Web UI World!', 'utf8');
     const encoded = base32Encode(original);
     const decoded = base32Decode(encoded);
-    expect(decoded.toString('utf8')).toBe('Hello PM2 Cluster World!');
+    expect(decoded.toString('utf8')).toBe('Hello PM2 Web UI World!');
   });
 
   it('generates a valid 20-byte Base32 secret', () => {
@@ -28,8 +28,8 @@ describe('RFC 6238 TOTP Cryptography', () => {
 
   it('generates a standard otpauth URI', () => {
     const secret = 'JBSWY3DPEHPK3PXP';
-    const uri = generateTotpUri({ secret, username: 'admin@pm2.local', issuer: 'PM2 Cluster' });
-    expect(uri).toContain('otpauth://totp/PM2%20Cluster:admin%40pm2.local');
+    const uri = generateTotpUri({ secret, username: 'admin@pm2.local', issuer: 'PM2 Web UI' });
+    expect(uri).toContain('otpauth://totp/PM2%20Web%20UI:admin%40pm2.local');
     expect(uri).toContain('secret=JBSWY3DPEHPK3PXP');
   });
 

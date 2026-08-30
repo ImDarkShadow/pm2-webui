@@ -1,4 +1,4 @@
-# PM2 Cluster Manager
+# PM2 Web UI
 
 A self-hosted web dashboard and multi-server manager for PM2. Monitor, restart, stream logs, and deploy applications across multiple servers from a single interface.
 
@@ -18,7 +18,7 @@ A self-hosted web dashboard and multi-server manager for PM2. Monitor, restart, 
 
 ## Feature Comparison
 
-| Feature                  |         PM2 Cluster Manager         | PM2 Plus / Keymetrics |  Standard PM2 Web  |
+| Feature                  |             PM2 Web UI              | PM2 Plus / Keymetrics |  Standard PM2 Web  |
 | :----------------------- | :---------------------------------: | :-------------------: | :----------------: |
 | **Hosting**              |      Self-hosted / On-premise       |    Cloud SaaS only    |       Local        |
 | **Data Privacy**         | All telemetry stays in your network |   Third-party cloud   |       Local        |
@@ -70,11 +70,12 @@ pnpm test
 ### Running the Master Node
 
 ```bash
-# Copy and configure environment variables
-cp .env.master.example .env
+# Option 1: Direct via NPX
+npx pm2-webui
 
-# Start master server (API & dashboard on http://localhost:3005)
-pnpm --filter @pm2-cluster/master start
+# Option 2: Monorepo Development
+cp .env.master.example .env
+pnpm --filter @pm2-webui/master start
 ```
 
 Default credentials:
@@ -87,7 +88,7 @@ Default credentials:
 
 ## Connecting Worker Nodes to Master
 
-Worker machines run `@pm2-cluster/agent-core`. Each agent connects to the master server over a persistent WebSocket connection, streaming metrics/logs and executing commands.
+Worker machines run `@pm2-webui/agent-core`. Each agent connects to the master server over a persistent WebSocket connection, streaming metrics/logs and executing commands.
 
 ```mermaid
 graph TD
@@ -130,13 +131,16 @@ Make sure your master server is reachable from the worker node via its IP, priva
 
 On the remote worker machine:
 
-#### Option A: Running with pnpm (Development)
+#### Option A: Running with NPX or PNPM
 
 ```bash
+# Direct via NPX:
 MASTER_WS_URL=http://<master-ip>:3005 \
 AGENT_HOSTNAME="worker-01" \
-AGENT_PORT=4321 \
-pnpm --filter @pm2-cluster/agent-core start
+npx pm2-webui agent
+
+# Monorepo development:
+pnpm --filter @pm2-webui/agent-core start
 ```
 
 #### Option B: Running with PM2 (Production)
@@ -145,7 +149,7 @@ Run the agent under PM2 so it automatically restarts on failure and system boots
 
 ```bash
 pm2 start packages/agent-core/dist/index.js \
-  --name "pm2-cluster-agent" \
+  --name "pm2-webui-agent" \
   --env MASTER_WS_URL="http://<master-ip>:3005" \
   --env AGENT_HOSTNAME="worker-01" \
   --env AGENT_PORT=4321
@@ -156,22 +160,22 @@ pm2 startup
 
 #### Option C: Systemd Service
 
-Create `/etc/systemd/system/pm2-cluster-agent.service`:
+Create `/etc/systemd/system/pm2-webui-agent.service`:
 
 ```ini
 [Unit]
-Description=PM2 Cluster Worker Agent
+Description=PM2 Web UI Worker Agent
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/pm2-cluster
+WorkingDirectory=/opt/pm2-webui
 Environment=NODE_ENV=production
 Environment=MASTER_WS_URL=http://master-ip:3005
 Environment=AGENT_HOSTNAME=worker-01
 Environment=AGENT_PORT=4321
-ExecStart=/usr/bin/node /opt/pm2-cluster/packages/agent-core/dist/index.js
+ExecStart=/usr/bin/node /opt/pm2-webui/packages/agent-core/dist/index.js
 Restart=always
 RestartSec=5
 
@@ -183,7 +187,7 @@ Enable and start:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now pm2-cluster-agent
+sudo systemctl enable --now pm2-webui-agent
 ```
 
 ---
@@ -240,7 +244,7 @@ For automated server deployments (cloud-init, Ansible, EC2 auto-scaling):
    MASTER_WS_URL=http://<master-ip>:3005 \
    JOIN_TOKEN="your-cluster-secret" \
    AGENT_HOSTNAME="worker-01" \
-   pnpm --filter @pm2-cluster/agent-core start
+   pnpm --filter @pm2-webui/agent-core start
    ```
    The node will be automatically approved and set to `online`.
 
@@ -317,7 +321,7 @@ Example files: [`.env.master.example`](./.env.master.example) and [`.env.agent.e
 | Variable             | Default                   | Description                                        |
 | :------------------- | :------------------------ | :------------------------------------------------- |
 | `PORT`               | `3005`                    | HTTP & WebSocket port for master API and dashboard |
-| `MASTER_DATA_DIR`    | `~/.pm2-cluster/master`   | Directory storing SQLite database (`master.db`)    |
+| `MASTER_DATA_DIR`    | `~/.pm2-webui/master`     | Directory storing SQLite database (`master.db`)    |
 | `JWT_SECRET`         | _(auto-generated)_        | 32+ character secret for JWT tokens and 2FA        |
 | `ADMIN_USER`         | `admin`                   | Initial administrator username                     |
 | `ADMIN_EMAIL`        | `admin@pm2-cluster.local` | Initial administrator email                        |
@@ -327,16 +331,16 @@ Example files: [`.env.master.example`](./.env.master.example) and [`.env.agent.e
 
 ### Worker Node
 
-| Variable                 | Default                | Description                                                                        |
-| :----------------------- | :--------------------- | :--------------------------------------------------------------------------------- |
-| `MASTER_WS_URL`          | _(none)_               | Master URL (e.g. `http://master-ip:3005` or `wss://pm2.domain.com`). **Required.** |
-| `JOIN_TOKEN`             | _(none)_               | Cluster join token matching `CLUSTER_JOIN_TOKEN`                                   |
-| `AGENT_HOSTNAME`         | `os.hostname()`        | Display name shown in the dashboard                                                |
-| `AGENT_PORT`             | `4321`                 | Direct telemetry port for browser connections                                      |
-| `AGENT_DATA_DIR`         | `~/.pm2-cluster/agent` | Local database and log storage path                                                |
-| `METRICS_INTERVAL_MS`    | `3000`                 | Telemetry sampling interval in milliseconds                                        |
-| `LOG_RETENTION_DAYS`     | `7`                    | Days to keep structured log records                                                |
-| `METRICS_RETENTION_DAYS` | `30`                   | Days to keep historical metrics                                                    |
+| Variable                 | Default              | Description                                                                        |
+| :----------------------- | :------------------- | :--------------------------------------------------------------------------------- |
+| `MASTER_WS_URL`          | _(none)_             | Master URL (e.g. `http://master-ip:3005` or `wss://pm2.domain.com`). **Required.** |
+| `JOIN_TOKEN`             | _(none)_             | Cluster join token matching `CLUSTER_JOIN_TOKEN`                                   |
+| `AGENT_HOSTNAME`         | `os.hostname()`      | Display name shown in the dashboard                                                |
+| `AGENT_PORT`             | `4321`               | Direct telemetry port for browser connections                                      |
+| `AGENT_DATA_DIR`         | `~/.pm2-webui/agent` | Local database and log storage path                                                |
+| `METRICS_INTERVAL_MS`    | `3000`               | Telemetry sampling interval in milliseconds                                        |
+| `LOG_RETENTION_DAYS`     | `7`                  | Days to keep structured log records                                                |
+| `METRICS_RETENTION_DAYS` | `30`                 | Days to keep historical metrics                                                    |
 
 ---
 
@@ -376,9 +380,9 @@ If PM2 was started by a specific user, run the worker agent under that same user
 pnpm test
 
 # Run tests by package
-pnpm --filter @pm2-cluster/shared test
-pnpm --filter @pm2-cluster/agent-core test
-pnpm --filter @pm2-cluster/master test
+pnpm --filter @pm2-webui/shared test
+pnpm --filter @pm2-webui/agent-core test
+pnpm --filter @pm2-webui/master test
 ```
 
 ---

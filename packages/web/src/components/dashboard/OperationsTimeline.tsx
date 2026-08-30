@@ -10,7 +10,7 @@ import {
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
-import { OperationsTimelineEvent } from '@pm2-cluster/shared';
+import { OperationsTimelineEvent } from '@pm2-webui/shared';
 
 export interface OperationsTimelineProps {
   readonly events: readonly OperationsTimelineEvent[];

@@ -1,8 +1,11 @@
 {
-  "name": "pm2-cluster-manager-root",
+  "name": "pm2-webui",
   "version": "1.0.0",
-  "private": true,
+  "description": "Modern multi-node PM2 cluster management dashboard and real-time control plane",
   "type": "module",
+  "bin": {
+    "pm2-webui": "./bin/pm2-webui.js"
+  },
   "scripts": {
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",

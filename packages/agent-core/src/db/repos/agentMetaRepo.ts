@@ -1,5 +1,5 @@
 import { Database as SQLiteDatabase } from 'better-sqlite3';
-import { Result, ok, err, createAppError, Ed25519KeyPair } from '@pm2-cluster/shared';
+import { Result, ok, err, createAppError, Ed25519KeyPair } from '@pm2-webui/shared';
 
 export interface AgentMetaRepoDeps {
   readonly db: SQLiteDatabase;

@@ -1,4 +1,4 @@
-# Implementation Plan — PM2 Cluster Manager (Master/Agent Distributed Platform)
+# Implementation Plan — PM2 Web UI (Master/Agent Distributed Platform)
 
 ## Goal Description
 
@@ -13,9 +13,9 @@ Build a production-ready, self-hosted distributed PM2 management platform capabl
 #### Phase 1: Foundation & Core Protocols
 
 - [x] **Milestone 1:** Repository Setup, Tooling & CI Pipeline _(pnpm monorepo, strict TS, ESLint, Prettier, GitHub Actions CI)_
-- [x] **Milestone 2:** Shared Packages _(Types, Zod schemas, Ed25519 crypto helpers, WS protocol frames in `@pm2-cluster/shared`)_
+- [x] **Milestone 2:** Shared Packages _(Types, Zod schemas, Ed25519 crypto helpers, WS protocol frames in `@pm2-webui/shared`)_
 - [x] **Milestone 3:** Authentication & RBAC Engine _(Argon2id password hashing, JWT issue/verify, refresh tokens, role/permission evaluator)_
-- [x] **Milestone 4:** Agent Cryptographic Trust Chain Protocol _(Pure Ed25519 keypair generation, challenge-response protocol, pure state machine & token signing in `@pm2-cluster/shared`)_
+- [x] **Milestone 4:** Agent Cryptographic Trust Chain Protocol _(Pure Ed25519 keypair generation, challenge-response protocol, pure state machine & token signing in `@pm2-webui/shared`)_
 
 #### Phase 2: Backend Architecture & Storage
 
@@ -262,7 +262,7 @@ The project will be built as a modular TypeScript monorepo using `pnpm` workspac
 
 ### Milestone 2: Shared Packages (Types, Schemas & Protocols)
 
-- **Scope:** Standardize data contracts (`NodeState`, `ProcessInfo`, `LogSummary`, `MetricFrame`, `WSMessage`), Zod validators, and protocol constants in `@pm2-cluster/shared`.
+- **Scope:** Standardize data contracts (`NodeState`, `ProcessInfo`, `LogSummary`, `MetricFrame`, `WSMessage`), Zod validators, and protocol constants in `@pm2-webui/shared`.
 - **Definition of Done:** 100% test coverage on Zod schema parsing and protocol payload validation.
 
 ### Milestone 3: Authentication & RBAC Engine
@@ -272,7 +272,7 @@ The project will be built as a modular TypeScript monorepo using `pnpm` workspac
 
 ### Milestone 4: Agent Cryptographic Trust Chain Protocol
 
-- **Scope:** Agent Ed25519 keypair generator, challenge-response handshake protocol, pure enrollment state machine transitions (`transitionEnrollmentState`), and Master delegation token signing logic in `@pm2-cluster/shared`.
+- **Scope:** Agent Ed25519 keypair generator, challenge-response handshake protocol, pure enrollment state machine transitions (`transitionEnrollmentState`), and Master delegation token signing logic in `@pm2-webui/shared`.
 - **Definition of Done:** 100% unit test coverage validating cryptographic handshakes, tamper resistance, state transitions, and delegation token issuance/verification without requiring database access.
 
 ### Milestone 5: Master Backend & Persistent Storage

@@ -38,7 +38,7 @@ export const AppContent: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center text-xs text-zinc-500">
-        Initializing PM2 Cluster Platform...
+        Initializing PM2 Web UI...
       </div>
     );
   }

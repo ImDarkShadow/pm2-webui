@@ -8,7 +8,7 @@ import {
   ok,
   err,
   createAppError,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { AgentMetricsRepo } from '../db/repos/agentMetricsRepo.js';
 import { Pm2Manager } from '../pm2/index.js';
 

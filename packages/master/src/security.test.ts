@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { generateEd25519KeyPair } from '@pm2-cluster/shared';
+import { generateEd25519KeyPair } from '@pm2-webui/shared';
 import {
   MASTER_INIT_SQL,
   createUsersRepo,
@@ -114,7 +114,7 @@ describe('Security services', () => {
       const { secret, recoveryCodes } = setupRes.value;
 
       // 2. Enable 2FA with generated secret & valid code (formatted with space)
-      const { generateTotpCode } = await import('@pm2-cluster/shared');
+      const { generateTotpCode } = await import('@pm2-webui/shared');
       const validCode = generateTotpCode(secret);
       const formattedCode = `${validCode.slice(0, 3)} ${validCode.slice(3)}`;
 

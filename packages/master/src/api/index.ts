@@ -32,7 +32,7 @@ import {
   AllowedPm2Plugin,
   ClusterProcessInfo,
   OperationsTimelineEvent,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import crypto from 'node:crypto';
 import {
   AuthService,
@@ -50,7 +50,7 @@ import { AuditRepo } from '../db/repos/auditRepo.js';
 import { SettingsRepo } from '../db/repos/settingsRepo.js';
 import { GitAppsRepo } from '../db/repos/gitAppsRepo.js';
 import { DeploymentsRepo } from '../db/repos/deploymentsRepo.js';
-import { AgentCore } from '@pm2-cluster/agent-core';
+import { AgentCore } from '@pm2-webui/agent-core';
 
 export interface ApiRoutesDeps {
   readonly authService: AuthService;
@@ -171,14 +171,14 @@ RED='\\033[0;31m'
 NC='\\033[0m'
 
 echo -e "\${SKY}\${BOLD}======================================================\${NC}"
-echo -e "\${SKY}\${BOLD}   PM2 Cluster Manager — Worker Node Installer        \${NC}"
+echo -e "\${SKY}\${BOLD}   PM2 Web UI — Worker Node Installer        \${NC}"
 echo -e "\${SKY}\${BOLD}======================================================\${NC}\\n"
 
 MASTER_URL="\${MASTER_WS_URL:-${detectedMasterUrl}}"
 JOIN_TOKEN="\${JOIN_TOKEN:-}"
 AGENT_HOSTNAME="\${AGENT_HOSTNAME:-$(hostname)}"
 AGENT_PORT="\${AGENT_PORT:-4321}"
-INSTALL_DIR="/opt/pm2-cluster-agent"
+INSTALL_DIR="/opt/pm2-webui-agent"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -239,9 +239,9 @@ NODE_ENV=production
 EOF
 
 if command -v systemctl &> /dev/null; then
-    SERVICE_FILE="/etc/systemd/system/pm2-cluster-agent.service"
+    SERVICE_FILE="/etc/systemd/system/pm2-webui-agent.service"
     SERVICE_CONTENT="[Unit]
-Description=PM2 Cluster Worker Agent
+Description=PM2 Web UI Worker Agent
 After=network.target
 
 [Service]
@@ -249,7 +249,7 @@ Type=simple
 User=$(whoami)
 WorkingDirectory=\${INSTALL_DIR}
 EnvironmentFile=\${INSTALL_DIR}/.env
-ExecStart=$(which npx) @pm2-cluster/agent-core
+ExecStart=$(which npx) pm2-webui agent
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
@@ -260,16 +260,16 @@ WantedBy=multi-user.target"
     if [ "$EUID" -eq 0 ]; then
         echo "$SERVICE_CONTENT" > "$SERVICE_FILE"
         systemctl daemon-reload
-        systemctl enable pm2-cluster-agent
-        systemctl restart pm2-cluster-agent || true
+        systemctl enable pm2-webui-agent
+        systemctl restart pm2-webui-agent || true
     else
         echo "$SERVICE_CONTENT" | sudo tee "$SERVICE_FILE" > /dev/null
         sudo systemctl daemon-reload
-        sudo systemctl enable pm2-cluster-agent
-        sudo systemctl restart pm2-cluster-agent || true
+        sudo systemctl enable pm2-webui-agent
+        sudo systemctl restart pm2-webui-agent || true
     fi
 else
-    nohup npx @pm2-cluster/agent-core > "$INSTALL_DIR/agent.log" 2>&1 &
+    nohup npx pm2-webui agent > "$INSTALL_DIR/agent.log" 2>&1 &
 fi
 
 echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
@@ -1557,7 +1557,7 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
       status: 'building' as const,
       triggerType: 'manual' as const,
       triggeredByUsername: user.username,
-      logs: `[PM2 Cluster] Deployment queued by ${user.username}...\n`,
+      logs: `[PM2 Web UI] Deployment queued by ${user.username}...\n`,
       startedAt: Date.now(),
     };
 

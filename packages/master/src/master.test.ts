@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { generateEd25519KeyPair, signData } from '@pm2-cluster/shared';
+import { generateEd25519KeyPair, signData } from '@pm2-webui/shared';
 import {
   createMasterDatabase,
   createUsersRepo,

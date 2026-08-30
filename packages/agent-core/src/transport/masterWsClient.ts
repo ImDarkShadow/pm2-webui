@@ -9,7 +9,7 @@ import {
   ProcessActionRequest,
   signData,
   MetricFrame,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { AgentMetaRepo } from '../db/repos/agentMetaRepo.js';
 import { Pm2Manager } from '../pm2/index.js';
 import { LogEngine } from '../logging/index.js';

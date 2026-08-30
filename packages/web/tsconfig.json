@@ -17,7 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@pm2-cluster/shared": ["../shared/src/index.ts"]
+      "@pm2-webui/shared": ["../shared/src/index.ts"]
     }
   },
   "include": ["src"]

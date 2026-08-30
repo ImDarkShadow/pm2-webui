@@ -14,7 +14,7 @@ import { api } from '../api/client.js';
 import { useNodeStore } from '../store/nodeStore.js';
 import { usePreferencesStore } from '../store/preferencesStore.js';
 import { usePageVisibility } from '../hooks/usePageVisibility.js';
-import { ClusterProcessInfo } from '@pm2-cluster/shared';
+import { ClusterProcessInfo } from '@pm2-webui/shared';
 import { ProcessCard } from '../components/processes/ProcessCard.js';
 import { ProcessLogsDrawer } from '../components/processes/ProcessLogsDrawer.js';
 import { Modal } from '../components/ui/Modal.js';

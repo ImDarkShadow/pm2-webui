@@ -10,7 +10,7 @@ import {
   createAppError,
   issueDelegationToken,
   Ed25519KeyPair,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { UsersRepo } from '../db/repos/usersRepo.js';
 import { LockoutService } from './lockoutService.js';
 import { TwoFactorService } from './twoFactorService.js';

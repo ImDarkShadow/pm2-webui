@@ -9,7 +9,7 @@ import {
   err,
   createAppError,
   User,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 
 export interface ApiTokenServiceDeps {
   readonly apiTokensRepo: ApiTokensRepo;

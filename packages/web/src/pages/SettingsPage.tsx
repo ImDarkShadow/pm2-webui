@@ -395,8 +395,8 @@ export const SettingsPage: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs text-zinc-500">
-                  Protect your PM2 Cluster Manager account with an extra layer of security using
-                  Google Authenticator, 1Password, or Authy.
+                  Protect your PM2 Web UI account with an extra layer of security using Google
+                  Authenticator, 1Password, or Authy.
                 </p>
               </div>
 

@@ -10,7 +10,7 @@ import {
   ArrowDown,
   Server,
 } from 'lucide-react';
-import { ClusterProcessInfo } from '@pm2-cluster/shared';
+import { ClusterProcessInfo } from '@pm2-webui/shared';
 import { api } from '../../api/client.js';
 
 export interface ProcessLogsDrawerProps {
@@ -50,7 +50,7 @@ export const ProcessLogsDrawer: React.FC<ProcessLogsDrawerProps> = ({
       })
       .catch((err) => {
         if (isCancelled) return;
-        setLogs([`[PM2 Cluster Logs] Failed to load initial log chunk: ${err.message}`]);
+        setLogs([`[PM2 Web UI Logs] Failed to load initial log chunk: ${err.message}`]);
       });
 
     // Progressive log polling interval

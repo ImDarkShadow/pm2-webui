@@ -8,7 +8,7 @@ import {
   ok,
   err,
   createAppError,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 
 export interface NodesRepoDeps {
   readonly db: SQLiteDatabase;

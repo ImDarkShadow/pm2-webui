@@ -51,7 +51,7 @@ export const startAgentNode = async (
   }
 
   console.log(
-    `🚀 PM2 Cluster Agent started [ID: ${agentCore.agentId}, Hostname: ${config.hostname}]`,
+    `🚀 PM2 Web UI Agent started [ID: ${agentCore.agentId}, Hostname: ${config.hostname}]`,
   );
   if (config.masterWsUrl) {
     console.log(`🔗 Connecting to Master at: ${config.masterWsUrl}`);
@@ -60,7 +60,7 @@ export const startAgentNode = async (
   }
 
   const shutdown = () => {
-    console.log('🛑 Shutting down PM2 Cluster Agent...');
+    console.log('🛑 Shutting down PM2 Web UI Agent...');
     agentCore.stop();
     server.close();
     process.exit(0);

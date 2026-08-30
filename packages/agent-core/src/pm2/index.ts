@@ -13,7 +13,7 @@ import {
   AllowedPm2Plugin,
   InstalledPluginInfo,
   CustomProbeValue,
-} from '@pm2-cluster/shared';
+} from '@pm2-webui/shared';
 import { extractProcessGitInfo } from './gitInfo.js';
 
 export type QueuePriority = 'high' | 'normal' | 'low';

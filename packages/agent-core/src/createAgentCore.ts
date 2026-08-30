@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
-import { generateEd25519KeyPair, Result, ok } from '@pm2-cluster/shared';
+import { generateEd25519KeyPair, Result, ok } from '@pm2-webui/shared';
 import { AgentConfig, loadAgentConfig } from './config/index.js';
 import {
   createAgentDatabase,

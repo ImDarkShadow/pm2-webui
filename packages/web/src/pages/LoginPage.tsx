@@ -63,7 +63,7 @@ export const LoginPage: React.FC = () => {
         {/* Brand */}
         <div className="flex flex-col items-center mb-6">
           <Logo size={68} className="mb-2" />
-          <h1 className="text-xl font-bold text-zinc-100 tracking-tight">PM2 Cluster Manager</h1>
+          <h1 className="text-xl font-bold text-zinc-100 tracking-tight">PM2 Web UI</h1>
           <p className="text-xs text-zinc-500 mt-0.5">Sign in to your cluster</p>
         </div>
 

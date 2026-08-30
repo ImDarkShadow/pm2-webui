@@ -1,5 +1,5 @@
 import { Database as SQLiteDatabase } from 'better-sqlite3';
-import { CrashEvent, Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { CrashEvent, Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 export interface AgentCrashRepoDeps {
   readonly db: SQLiteDatabase;

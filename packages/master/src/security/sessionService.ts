@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { SessionsRepo } from '../db/repos/sessionsRepo.js';
-import { Session, SessionInfo, Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { Session, SessionInfo, Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 export interface SessionServiceDeps {
   readonly sessionsRepo: SessionsRepo;

@@ -1,8 +1,8 @@
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { generateEd25519KeyPair } from '@pm2-cluster/shared';
-import { createAgentCore } from '@pm2-cluster/agent-core';
+import { generateEd25519KeyPair } from '@pm2-webui/shared';
+import { createAgentCore } from '@pm2-webui/agent-core';
 import {
   createMasterDatabase,
   createUsersRepo,
@@ -32,12 +32,12 @@ const __dirname = path.dirname(__filename);
 
 export const startMasterNode = async () => {
   const masterDataDir =
-    process.env.MASTER_DATA_DIR || path.join(os.homedir(), '.pm2-cluster', 'master');
+    process.env.MASTER_DATA_DIR || path.join(os.homedir(), '.pm2-webui', 'master');
   const masterDbPath = path.join(masterDataDir, 'master.db');
   const port = Number(process.env.PORT || 3005);
   const jwtSecret = process.env.JWT_SECRET || 'pm2-cluster-jwt-super-secret-key-32-chars';
 
-  console.log('🚀 Initializing PM2 Cluster Master...');
+  console.log('🚀 Initializing PM2 Web UI Master...');
 
   // 1. Initialize Master SQLite DB & Migrations
   const masterDb = createMasterDatabase({ dbPath: masterDbPath, logger: console });

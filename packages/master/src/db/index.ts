@@ -2,7 +2,7 @@ import Database, { Database as SQLiteDatabase } from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

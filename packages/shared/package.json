@@ -1,5 +1,5 @@
 {
-  "name": "@pm2-cluster/shared",
+  "name": "@pm2-webui/shared",
   "version": "1.0.0",
   "private": true,
   "type": "module",

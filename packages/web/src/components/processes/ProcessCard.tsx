@@ -11,7 +11,7 @@ import {
   Activity,
   Cpu,
 } from 'lucide-react';
-import { ClusterProcessInfo } from '@pm2-cluster/shared';
+import { ClusterProcessInfo } from '@pm2-webui/shared';
 
 export interface ProcessCardProps {
   readonly process: ClusterProcessInfo;

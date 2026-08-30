@@ -1,6 +1,6 @@
 import pm2 from 'pm2';
 import crypto from 'node:crypto';
-import { CrashEvent, LogLine, Result, ok, err, createAppError } from '@pm2-cluster/shared';
+import { CrashEvent, LogLine, Result, ok, err, createAppError } from '@pm2-webui/shared';
 
 export interface Pm2ListenerDeps {
   readonly pm2Instance?: typeof pm2;
