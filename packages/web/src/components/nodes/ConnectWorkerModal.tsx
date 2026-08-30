@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, Copy, Check, ShieldCheck, Cpu, Layers, FileCode } from 'lucide-react';
+import { Terminal, Copy, Check, ShieldCheck, Cpu, FileCode } from 'lucide-react';
 import { Modal } from '../ui/Modal.js';
 
 interface ConnectWorkerModalProps {
@@ -13,7 +13,7 @@ export const ConnectWorkerModal: React.FC<ConnectWorkerModalProps> = ({ isOpen, 
   const [masterUrl, setMasterUrl] = useState(defaultMaster);
   const [joinToken, setJoinToken] = useState('');
   const [workerName, setWorkerName] = useState('');
-  const [activeTab, setActiveTab] = useState<'curl' | 'npx' | 'docker' | 'systemd'>('curl');
+  const [activeTab, setActiveTab] = useState<'curl' | 'npx' | 'systemd'>('curl');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const cleanMasterUrl = masterUrl.trim() || defaultMaster;
@@ -31,15 +31,6 @@ export const ConnectWorkerModal: React.FC<ConnectWorkerModalProps> = ({ isOpen, 
   const npxCommand = `MASTER_WS_URL="${cleanMasterUrl}"${
     cleanToken ? ` JOIN_TOKEN="${cleanToken}"` : ''
   }${cleanName ? ` AGENT_HOSTNAME="${cleanName}"` : ''} npx @pm2-cluster/agent-core`;
-
-  const dockerCommand = `docker run -d \\
-  --name pm2-worker \\
-  --restart always \\
-  -e MASTER_WS_URL="${cleanMasterUrl}" \\${
-    cleanToken ? `\n  -e JOIN_TOKEN="${cleanToken}" \\` : ''
-  }${cleanName ? `\n  -e AGENT_HOSTNAME="${cleanName}" \\` : ''}
-  -v ~/.pm2:/root/.pm2 \\
-  ghcr.io/imdarkshadow/pm2-agent:latest`;
 
   const systemdService = `[Unit]
 Description=PM2 Cluster Worker Agent
@@ -144,16 +135,6 @@ WantedBy=multi-user.target`;
               <Cpu size={13} /> NPX / CLI
             </button>
             <button
-              onClick={() => setActiveTab('docker')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                activeTab === 'docker'
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <Layers size={13} /> Docker
-            </button>
-            <button
               onClick={() => setActiveTab('systemd')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 activeTab === 'systemd'
@@ -219,32 +200,6 @@ WantedBy=multi-user.target`;
               </div>
               <pre className="p-3.5 bg-zinc-950 text-zinc-100 rounded-xl font-mono text-xs overflow-x-auto select-all border border-zinc-800 leading-relaxed">
                 {npxCommand}
-              </pre>
-            </div>
-          )}
-
-          {/* Tab 3: Docker */}
-          {activeTab === 'docker' && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                <span>Run container with PM2 socket mounted:</span>
-                <button
-                  onClick={() => copyToClipboard(dockerCommand, 'docker')}
-                  className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
-                >
-                  {copiedKey === 'docker' ? (
-                    <>
-                      <Check size={12} /> Copied to Clipboard
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={12} /> Copy Docker Command
-                    </>
-                  )}
-                </button>
-              </div>
-              <pre className="p-3.5 bg-zinc-950 text-zinc-100 rounded-xl font-mono text-xs overflow-x-auto select-all border border-zinc-800 leading-relaxed">
-                {dockerCommand}
               </pre>
             </div>
           )}

@@ -154,13 +154,7 @@ pm2 save
 pm2 startup
 ```
 
-#### Option C: Docker Compose
-
-```bash
-docker compose up -d
-```
-
-#### Option D: Systemd Service
+#### Option C: Systemd Service
 
 Create `/etc/systemd/system/pm2-cluster-agent.service`:
 
@@ -235,7 +229,7 @@ sequenceDiagram
 
 #### Method B: Automatic Enrollment (Join Token)
 
-For automated server deployments (cloud-init, Docker Swarm, EC2 auto-scaling):
+For automated server deployments (cloud-init, Ansible, EC2 auto-scaling):
 
 1. Set `CLUSTER_JOIN_TOKEN` on the master:
    ```bash

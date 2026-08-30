@@ -176,7 +176,7 @@ echo -e "\${SKY}\${BOLD}======================================================\$
 
 MASTER_URL="\${MASTER_WS_URL:-${detectedMasterUrl}}"
 JOIN_TOKEN="\${JOIN_TOKEN:-}"
-AGENT_HOSTNAME="\${AGENT_HOSTNAME:-\$(hostname)}"
+AGENT_HOSTNAME="\${AGENT_HOSTNAME:-$(hostname)}"
 AGENT_PORT="\${AGENT_PORT:-4321}"
 INSTALL_DIR="/opt/pm2-cluster-agent"
 
@@ -246,10 +246,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=\$(whoami)
+User=$(whoami)
 WorkingDirectory=\${INSTALL_DIR}
 EnvironmentFile=\${INSTALL_DIR}/.env
-ExecStart=\$(which npx) @pm2-cluster/agent-core
+ExecStart=$(which npx) @pm2-cluster/agent-core
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
