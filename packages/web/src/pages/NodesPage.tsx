@@ -1,15 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { Server, Check, X, RefreshCw } from 'lucide-react';
+import { Server, Check, X, RefreshCw, Plus, Terminal, Copy } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useNodeStore } from '../store/nodeStore.js';
 import { StatusBadge } from '../components/ui/StatusBadge.js';
 import { Modal } from '../components/ui/Modal.js';
+import { ConnectWorkerModal } from '../components/nodes/ConnectWorkerModal.js';
 
 export const NodesPage: React.FC = () => {
   const { nodes, setNodes, setSelectedNodeId } = useNodeStore();
   const [loading, setLoading] = useState(false);
   const [selectedPendingNode, setSelectedPendingNode] = useState<any | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [copiedQuickCmd, setCopiedQuickCmd] = useState(false);
+
+  const defaultMaster =
+    typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3005';
+  const quickCurlCmd = `curl -fsSL ${defaultMaster}/install.sh | bash`;
 
   const loadNodes = async () => {
     setLoading(true);
@@ -49,6 +56,12 @@ export const NodesPage: React.FC = () => {
     }
   };
 
+  const handleCopyQuickCmd = () => {
+    navigator.clipboard.writeText(quickCurlCmd);
+    setCopiedQuickCmd(true);
+    setTimeout(() => setCopiedQuickCmd(false), 2000);
+  };
+
   return (
     <div className="w-full space-y-4 sm:space-y-6">
       {/* Header */}
@@ -61,14 +74,23 @@ export const NodesPage: React.FC = () => {
             Manage cluster workers, approve enrollments, and check connectivity topology
           </p>
         </div>
-        <button
-          onClick={loadNodes}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-xs font-medium text-zinc-800 dark:text-zinc-200 transition-colors shadow-sm"
-        >
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          Refresh Nodes
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadNodes}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-xs font-medium text-zinc-800 dark:text-zinc-200 transition-colors shadow-2xs"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setIsConnectModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-all shadow-sm"
+          >
+            <Plus size={14} className="stroke-[2.5]" />
+            Connect Worker Node
+          </button>
+        </div>
       </div>
 
       {feedback && (
@@ -83,8 +105,44 @@ export const NodesPage: React.FC = () => {
         </div>
       )}
 
+      {/* Quick Connect Helper Banner */}
+      <div className="p-3.5 sm:p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <Terminal size={16} />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+              One-Line Worker Installation
+            </div>
+            <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              Run this on any remote server to attach it to this cluster:
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <code className="px-2.5 py-1.5 rounded-lg bg-zinc-950 text-emerald-400 text-[11px] font-mono border border-zinc-800 overflow-x-auto truncate max-w-xs sm:max-w-md">
+            {quickCurlCmd}
+          </code>
+          <button
+            onClick={handleCopyQuickCmd}
+            className="p-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors shrink-0"
+            title="Copy command"
+          >
+            {copiedQuickCmd ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+          </button>
+          <button
+            onClick={() => setIsConnectModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold whitespace-nowrap transition-colors"
+          >
+            Options & Tokens →
+          </button>
+        </div>
+      </div>
+
       {/* Nodes Table */}
-      <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl overflow-hidden shadow-2xs">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="border-b border-zinc-200 dark:border-zinc-800/80 bg-zinc-50 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 font-medium">
@@ -100,8 +158,24 @@ export const NodesPage: React.FC = () => {
           <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/50">
             {nodes.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-zinc-400 dark:text-zinc-500">
-                  No nodes found in cluster.
+                <td colSpan={7} className="py-12 text-center">
+                  <div className="max-w-sm mx-auto space-y-3">
+                    <Server size={28} className="mx-auto text-zinc-400 dark:text-zinc-600" />
+                    <div>
+                      <h4 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                        No worker nodes connected yet
+                      </h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                        Connect your first remote worker server using the automated install script.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setIsConnectModalOpen(true)}
+                      className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Plus size={13} /> Connect Worker Node
+                    </button>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -213,6 +287,12 @@ export const NodesPage: React.FC = () => {
           </div>
         </Modal>
       )}
+
+      {/* Connect Worker Modal */}
+      <ConnectWorkerModal
+        isOpen={isConnectModalOpen}
+        onClose={() => setIsConnectModalOpen(false)}
+      />
     </div>
   );
 };

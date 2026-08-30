@@ -299,8 +299,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             </span>
           </div>
           <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
-            <span>Auth:</span>
-            <span className="text-zinc-700 dark:text-zinc-300 font-medium">Ed25519</span>
+            <button
+              onClick={() => onNavigate('nodes')}
+              className="text-emerald-600 dark:text-emerald-400 hover:underline font-medium flex items-center gap-1"
+            >
+              + Connect Worker →
+            </button>
+            <span className="text-zinc-500 font-mono text-[10px]">
+              {nodes.length === 1 ? 'Master only' : `${nodes.length} nodes`}
+            </span>
           </div>
         </div>
 

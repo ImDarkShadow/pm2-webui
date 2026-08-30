@@ -153,6 +153,134 @@ export const registerApiRoutes = async (
     return canUserPerformAction({ user, action, targetScope });
   };
 
+  // Automated Worker Node Installation Script
+  const serveInstallScript = async (req: FastifyRequest, reply: FastifyReply) => {
+    const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
+    const host =
+      (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3005';
+    const detectedMasterUrl = `${protocol}://${host}`;
+
+    const script = `#!/usr/bin/env bash
+set -e
+
+BOLD='\\033[1m'
+GREEN='\\033[0;32m'
+SKY='\\033[0;36m'
+AMBER='\\033[0;33m'
+RED='\\033[0;31m'
+NC='\\033[0m'
+
+echo -e "\${SKY}\${BOLD}======================================================\${NC}"
+echo -e "\${SKY}\${BOLD}   PM2 Cluster Manager — Worker Node Installer        \${NC}"
+echo -e "\${SKY}\${BOLD}======================================================\${NC}\\n"
+
+MASTER_URL="\${MASTER_WS_URL:-${detectedMasterUrl}}"
+JOIN_TOKEN="\${JOIN_TOKEN:-}"
+AGENT_HOSTNAME="\${AGENT_HOSTNAME:-\$(hostname)}"
+AGENT_PORT="\${AGENT_PORT:-4321}"
+INSTALL_DIR="/opt/pm2-cluster-agent"
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --master=*) MASTER_URL="\${1#*=}"; shift ;;
+    --master) MASTER_URL="$2"; shift 2 ;;
+    --token=*) JOIN_TOKEN="\${1#*=}"; shift ;;
+    --token) JOIN_TOKEN="$2"; shift 2 ;;
+    --name=*) AGENT_HOSTNAME="\${1#*=}"; shift ;;
+    --name) AGENT_HOSTNAME="$2"; shift 2 ;;
+    --port=*) AGENT_PORT="\${1#*=}"; shift ;;
+    --port) AGENT_PORT="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+echo -e "⚙️  Target Master:   \${GREEN}\${MASTER_URL}\${NC}"
+echo -e "🏷️  Node Hostname:   \${GREEN}\${AGENT_HOSTNAME}\${NC}"
+echo -e "🔌 Agent Port:      \${GREEN}\${AGENT_PORT}\${NC}"
+
+if ! command -v node &> /dev/null; then
+    echo -e "\${AMBER}Node.js not found. Installing Node.js 22 LTS...\${NC}"
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update -y && sudo apt-get install -y curl
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+    elif command -v yum &> /dev/null; then
+        curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+        sudo yum install -y nodejs
+    elif command -v dnf &> /dev/null; then
+        curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+        sudo dnf install -y nodejs
+    else
+        echo -e "\${RED}Please install Node.js 20+ first.\${NC}"
+        exit 1
+    fi
+fi
+
+if ! command -v pm2 &> /dev/null; then
+    echo -e "\${AMBER}Installing PM2 globally...\${NC}"
+    npm install -g pm2
+fi
+
+if [ "$EUID" -eq 0 ]; then
+    mkdir -p "$INSTALL_DIR"
+else
+    sudo mkdir -p "$INSTALL_DIR"
+    sudo chown -R "$(whoami)":"$(whoami)" "$INSTALL_DIR"
+fi
+cd "$INSTALL_DIR"
+
+cat <<EOF > "$INSTALL_DIR/.env"
+MASTER_WS_URL=\${MASTER_URL}
+AGENT_HOSTNAME=\${AGENT_HOSTNAME}
+JOIN_TOKEN=\${JOIN_TOKEN}
+AGENT_PORT=\${AGENT_PORT}
+DATA_DIR=\${INSTALL_DIR}/data
+NODE_ENV=production
+EOF
+
+if command -v systemctl &> /dev/null; then
+    SERVICE_FILE="/etc/systemd/system/pm2-cluster-agent.service"
+    SERVICE_CONTENT="[Unit]
+Description=PM2 Cluster Worker Agent
+After=network.target
+
+[Service]
+Type=simple
+User=\$(whoami)
+WorkingDirectory=\${INSTALL_DIR}
+EnvironmentFile=\${INSTALL_DIR}/.env
+ExecStart=\$(which npx) @pm2-cluster/agent-core
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target"
+
+    if [ "$EUID" -eq 0 ]; then
+        echo "$SERVICE_CONTENT" > "$SERVICE_FILE"
+        systemctl daemon-reload
+        systemctl enable pm2-cluster-agent
+        systemctl restart pm2-cluster-agent || true
+    else
+        echo "$SERVICE_CONTENT" | sudo tee "$SERVICE_FILE" > /dev/null
+        sudo systemctl daemon-reload
+        sudo systemctl enable pm2-cluster-agent
+        sudo systemctl restart pm2-cluster-agent || true
+    fi
+else
+    nohup npx @pm2-cluster/agent-core > "$INSTALL_DIR/agent.log" 2>&1 &
+fi
+
+echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
+`;
+    return reply.type('text/plain; charset=utf-8').send(script);
+  };
+
+  fastify.get('/install.sh', serveInstallScript);
+  fastify.get('/install-agent.sh', serveInstallScript);
+  fastify.get('/api/v1/install.sh', serveInstallScript);
+
   // 1. Auth & 2FA Endpoints
   fastify.post('/api/v1/auth/login', async (req, reply) => {
     const parsed = LoginRequestSchema.safeParse(req.body);
