@@ -241,4 +241,92 @@ describe('Security services', () => {
       expect(verifyRevoked.error.code).toBe('UNAUTHORIZED');
     });
   });
+
+  describe('Password Management & Forced First-Use Change', () => {
+    it('forces password change when default password is used', async () => {
+      const freshDb = new Database(':memory:');
+      freshDb.exec(MASTER_INIT_SQL);
+      const freshUsersRepo = createUsersRepo({ db: freshDb });
+      const freshSessionsRepo = createSessionsRepo({ db: freshDb });
+      const freshSessionService = createSessionService({
+        sessionsRepo: freshSessionsRepo,
+        jwtSecret,
+      });
+      const freshAuthService = createAuthService({
+        usersRepo: freshUsersRepo,
+        lockoutService,
+        twoFactorService,
+        sessionService: freshSessionService,
+        securityAuditService,
+        masterKeyPair,
+        jwtSecret,
+      });
+
+      // Default password should set mustChangePassword = true
+      const defaultAdminRes = await freshAuthService.ensureInitialAdmin();
+      expect(defaultAdminRes.ok).toBe(true);
+      if (defaultAdminRes.ok) {
+        expect(defaultAdminRes.value?.mustChangePassword).toBe(true);
+      }
+
+      const loginRes = await freshAuthService.login('admin', 'adminpassword123', '127.0.0.1');
+      expect(loginRes.ok).toBe(true);
+      if (loginRes.ok && !loginRes.value.requires2FA) {
+        expect(loginRes.value.user.mustChangePassword).toBe(true);
+      }
+    });
+
+    it('changes password successfully, rejects incorrect current, and clears mustChangePassword', async () => {
+      const userRes = usersRepo.findByUsername('admin');
+      if (!userRes.ok || !userRes.value) throw new Error('Admin not found');
+      const userId = userRes.value.id;
+
+      // 1. Reject wrong current password
+      const wrongCurr = await authService.changePassword(
+        userId,
+        'wrongpassword',
+        'newsecret123',
+        '127.0.0.1',
+      );
+      expect(wrongCurr.ok).toBe(false);
+      if (!wrongCurr.ok) {
+        expect(wrongCurr.error.code).toBe('UNAUTHORIZED');
+      }
+
+      // 2. Reject same password
+      const samePass = await authService.changePassword(
+        userId,
+        'password123',
+        'password123',
+        '127.0.0.1',
+      );
+      expect(samePass.ok).toBe(false);
+      if (!samePass.ok) {
+        expect(samePass.error.code).toBe('VALIDATION_ERROR');
+      }
+
+      // 3. Successfully change password
+      const successChange = await authService.changePassword(
+        userId,
+        'password123',
+        'newStr0ngPass!',
+        '127.0.0.1',
+      );
+      expect(successChange.ok).toBe(true);
+      if (successChange.ok) {
+        expect(successChange.value.mustChangePassword).toBe(false);
+      }
+
+      // 4. Old password no longer works
+      const oldLogin = await authService.login('admin', 'password123', '127.0.0.1');
+      expect(oldLogin.ok).toBe(false);
+
+      // 5. New password works
+      const newLogin = await authService.login('admin', 'newStr0ngPass!', '127.0.0.1');
+      expect(newLogin.ok).toBe(true);
+      if (newLogin.ok && !newLogin.value.requires2FA) {
+        expect(newLogin.value.user.mustChangePassword).toBe(false);
+      }
+    });
+  });
 });

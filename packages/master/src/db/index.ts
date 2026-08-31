@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS users (
   role_id TEXT NOT NULL REFERENCES roles(id),
   two_factor_enabled INTEGER NOT NULL DEFAULT 0,
   two_factor_secret_enc TEXT,
+  must_change_password INTEGER NOT NULL DEFAULT 0,
   failed_attempts INTEGER NOT NULL DEFAULT 0,
   locked_until INTEGER,
   preferences_json TEXT,
@@ -261,6 +262,11 @@ export const createMasterDatabase = (deps: MasterDbDeps): MasterDatabase => {
           }
           if (!userColNames.has('locked_until')) {
             db.exec('ALTER TABLE users ADD COLUMN locked_until INTEGER;');
+          }
+          if (!userColNames.has('must_change_password')) {
+            db.exec(
+              'ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;',
+            );
           }
           if (!userColNames.has('preferences_json')) {
             db.exec('ALTER TABLE users ADD COLUMN preferences_json TEXT;');

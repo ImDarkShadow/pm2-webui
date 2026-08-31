@@ -2,6 +2,9 @@ export interface UserSession {
   readonly id: string;
   readonly username: string;
   readonly roleName: 'admin' | 'operator' | 'viewer';
+  readonly email?: string;
+  readonly mustChangePassword?: boolean;
+  readonly twoFactorEnabled?: boolean;
 }
 
 class ApiClient {
@@ -144,6 +147,18 @@ class ApiClient {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: 'Failed to disable 2FA' }));
       throw new Error(err.message || 'Invalid password');
+    }
+    return res.json();
+  }
+
+  public async changePassword(currentPassword: string, newPassword: string) {
+    const res = await this.fetchWithAuth('/api/v1/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to change password' }));
+      throw new Error(err.message || 'Failed to change password');
     }
     return res.json();
   }

@@ -189,6 +189,16 @@ export const UpdateUserSchema = z.object({
   roleId: z.string().uuid().optional(),
 });
 
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters long')
+    .refine((val) => /[A-Za-z]/.test(val) && /[0-9]/.test(val), {
+      message: 'New password must contain both letters and numbers',
+    }),
+});
+
 // Settings Schema
 export const GlobalSettingsSchema = z.object({
   logRetentionDays: z.number().int().positive().default(7),

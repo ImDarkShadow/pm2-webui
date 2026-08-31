@@ -14,12 +14,13 @@ import { DeploymentsPage } from './pages/DeploymentsPage.js';
 import { GitAppDetailPage } from './pages/GitAppDetailPage.js';
 import { AuditPage } from './pages/AuditPage.js';
 import { SettingsPage } from './pages/SettingsPage.js';
+import { ChangePasswordModal } from './components/security/ChangePasswordModal.js';
 
 import { useNodeStore } from './store/nodeStore.js';
 import { api } from './api/client.js';
 
 export const AppContent: React.FC = () => {
-  const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
+  const { isAuthenticated, isLoading, checkAuth, user } = useAuthStore();
   const { setNodes } = useNodeStore();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedProcessDetail, setSelectedProcessDetail] = useState<string | null>(null);
@@ -93,6 +94,12 @@ export const AppContent: React.FC = () => {
       {activeTab === 'audit' && <AuditPage />}
 
       {activeTab === 'settings' && <SettingsPage />}
+
+      {/* Forced Password Change on First Use */}
+      <ChangePasswordModal
+        isOpen={Boolean(isAuthenticated && user?.mustChangePassword)}
+        isForced={true}
+      />
     </AppLayout>
   );
 };

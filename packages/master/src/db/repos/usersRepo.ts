@@ -13,6 +13,7 @@ export interface CreateUserData {
   readonly roleId: string;
   readonly twoFactorEnabled?: boolean;
   readonly twoFactorSecretEnc?: string;
+  readonly mustChangePassword?: boolean;
 }
 
 export interface UserWithPasswordHash extends User {
@@ -27,6 +28,11 @@ export interface UsersRepo {
   readonly findByUsername: (username: string) => Result<UserWithPasswordHash | null>;
   readonly findByEmail: (email: string) => Result<UserWithPasswordHash | null>;
   readonly create: (data: CreateUserData) => Result<User>;
+  readonly updatePassword: (
+    userId: string,
+    newPasswordHash: string,
+    mustChangePassword?: boolean,
+  ) => Result<void>;
   readonly list: () => Result<readonly User[]>;
   readonly count: () => Result<number>;
   readonly set2FA: (userId: string, enabled: boolean, secretEnc?: string) => Result<void>;
@@ -46,6 +52,7 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
     SELECT u.id, u.username, u.email, u.password_hash as passwordHash, u.role_id as roleId,
            r.name as roleName, u.two_factor_enabled as twoFactorEnabled,
            u.two_factor_secret_enc as twoFactorSecretEnc,
+           u.must_change_password as mustChangePassword,
            u.failed_attempts as failedAttempts, u.locked_until as lockedUntil,
            u.created_at as createdAt, u.updated_at as updatedAt
     FROM users u
@@ -57,6 +64,7 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
     SELECT u.id, u.username, u.email, u.password_hash as passwordHash, u.role_id as roleId,
            r.name as roleName, u.two_factor_enabled as twoFactorEnabled,
            u.two_factor_secret_enc as twoFactorSecretEnc,
+           u.must_change_password as mustChangePassword,
            u.failed_attempts as failedAttempts, u.locked_until as lockedUntil,
            u.created_at as createdAt, u.updated_at as updatedAt
     FROM users u
@@ -68,6 +76,7 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
     SELECT u.id, u.username, u.email, u.password_hash as passwordHash, u.role_id as roleId,
            r.name as roleName, u.two_factor_enabled as twoFactorEnabled,
            u.two_factor_secret_enc as twoFactorSecretEnc,
+           u.must_change_password as mustChangePassword,
            u.failed_attempts as failedAttempts, u.locked_until as lockedUntil,
            u.created_at as createdAt, u.updated_at as updatedAt
     FROM users u
@@ -78,14 +87,23 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
   const insertUserStmt = db.prepare(`
     INSERT INTO users (
       id, username, email, password_hash, role_id,
-      two_factor_enabled, two_factor_secret_enc, failed_attempts, locked_until,
+      two_factor_enabled, two_factor_secret_enc, must_change_password, failed_attempts, locked_until,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+  `);
+
+  const updatePasswordStmt = db.prepare(`
+    UPDATE users SET
+      password_hash = ?,
+      must_change_password = ?,
+      updated_at = ?
+    WHERE id = ?
   `);
 
   const listUsersStmt = db.prepare(`
     SELECT u.id, u.username, u.email, u.role_id as roleId,
            r.name as roleName, u.two_factor_enabled as twoFactorEnabled,
+           u.must_change_password as mustChangePassword,
            u.created_at as createdAt, u.updated_at as updatedAt
     FROM users u
     JOIN roles r ON u.role_id = r.id
@@ -129,6 +147,7 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
       roleName: row.roleName,
       twoFactorEnabled: Boolean(row.twoFactorEnabled),
       twoFactorSecretEnc: row.twoFactorSecretEnc ?? undefined,
+      mustChangePassword: Boolean(row.mustChangePassword),
       failedAttempts: Number(row.failedAttempts || 0),
       lockedUntil: row.lockedUntil ? Number(row.lockedUntil) : undefined,
       createdAt: row.createdAt,
@@ -145,6 +164,7 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
       roleId: row.roleId,
       roleName: row.roleName,
       twoFactorEnabled: Boolean(row.twoFactorEnabled),
+      mustChangePassword: Boolean(row.mustChangePassword),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -192,6 +212,7 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
         data.roleId,
         data.twoFactorEnabled ? 1 : 0,
         data.twoFactorSecretEnc || null,
+        data.mustChangePassword ? 1 : 0,
         now,
         now,
       );
@@ -217,6 +238,21 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
           undefined,
           error,
         ),
+      );
+    }
+  };
+
+  const updatePassword = (
+    userId: string,
+    newPasswordHash: string,
+    mustChangePassword: boolean = false,
+  ): Result<void> => {
+    try {
+      updatePasswordStmt.run(newPasswordHash, mustChangePassword ? 1 : 0, Date.now(), userId);
+      return ok(undefined);
+    } catch (error) {
+      return err(
+        createAppError('INTERNAL_ERROR', 'Failed to update user password', undefined, error),
       );
     }
   };
@@ -311,6 +347,7 @@ export const createUsersRepo = (deps: UsersRepoDeps): UsersRepo => {
     findByUsername,
     findByEmail,
     create,
+    updatePassword,
     list,
     count,
     set2FA,

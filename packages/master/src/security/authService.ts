@@ -76,6 +76,12 @@ export interface AuthService {
     userAgent?: string,
   ) => Promise<Result<{ accessToken: string; refreshToken: string }>>;
   readonly logout: (sessionId: string, userId?: string, ipAddress?: string) => Result<void>;
+  readonly changePassword: (
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    ipAddress: string,
+  ) => Promise<Result<User>>;
   readonly verifyAccessToken: (token: string) => Result<JwtUserPayload>;
   readonly issueDelegationTokenForNode: (
     userId: string,
@@ -203,6 +209,7 @@ export const createAuthService = (deps: AuthServiceDeps): AuthService => {
     logger?.info?.(`Creating initial admin user '${username}'`);
     const passwordHash = await hashPassword(password);
     const adminId = crypto.randomUUID();
+    const isDefaultPassword = password === 'adminpassword123';
 
     const createRes = usersRepo.create({
       id: adminId,
@@ -210,6 +217,7 @@ export const createAuthService = (deps: AuthServiceDeps): AuthService => {
       email,
       passwordHash,
       roleId: 'role-admin',
+      mustChangePassword: isDefaultPassword,
     });
 
     return createRes;
@@ -436,6 +444,68 @@ export const createAuthService = (deps: AuthServiceDeps): AuthService => {
     });
   };
 
+  const changePassword = async (
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    ipAddress: string,
+  ): Promise<Result<User>> => {
+    const userRes = usersRepo.findById(userId);
+    if (!userRes.ok || !userRes.value) {
+      return err(createAppError('NOT_FOUND', 'User not found'));
+    }
+
+    const userWithHash = userRes.value;
+    const validCurrent = await verifyPassword(userWithHash.passwordHash, currentPassword);
+    if (!validCurrent) {
+      securityAuditService.logEvent({
+        event: 'user:password_change_failed',
+        userId: userWithHash.id,
+        username: userWithHash.username,
+        status: 'failure',
+        ipAddress,
+        details: { reason: 'Incorrect current password' },
+      });
+      return err(createAppError('UNAUTHORIZED', 'Current password is incorrect'));
+    }
+
+    if (currentPassword === newPassword) {
+      return err(
+        createAppError(
+          'VALIDATION_ERROR',
+          'New password must be different from your current password',
+        ),
+      );
+    }
+
+    const newPasswordHash = await hashPassword(newPassword);
+    const updateRes = usersRepo.updatePassword(userId, newPasswordHash, false);
+    if (!updateRes.ok) return updateRes as any;
+
+    securityAuditService.logEvent({
+      event: 'user:password_changed',
+      userId: userWithHash.id,
+      username: userWithHash.username,
+      status: 'success',
+      ipAddress,
+    });
+
+    const refreshedUserRes = usersRepo.findById(userId);
+    if (!refreshedUserRes.ok || !refreshedUserRes.value) {
+      return err(createAppError('INTERNAL_ERROR', 'Failed to reload user profile'));
+    }
+
+    const {
+      passwordHash: _,
+      twoFactorSecretEnc: __,
+      failedAttempts: ___,
+      lockedUntil: ____,
+      ...updatedUser
+    } = refreshedUserRes.value;
+
+    return ok(updatedUser);
+  };
+
   const logout = (sessionId: string, userId?: string, ipAddress?: string): Result<void> => {
     const revokeRes = sessionService.revokeSession(sessionId);
     if (revokeRes.ok) {
@@ -472,6 +542,7 @@ export const createAuthService = (deps: AuthServiceDeps): AuthService => {
     verify2FALogin,
     refresh,
     logout,
+    changePassword,
     verifyAccessToken,
     issueDelegationTokenForNode,
   };

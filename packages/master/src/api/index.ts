@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   LoginRequestSchema,
   RefreshTokenRequestSchema,
+  ChangePasswordSchema,
   Verify2FASchema,
   Enable2FASchema,
   Disable2FASchema,
@@ -356,10 +357,62 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.get('/api/v1/auth/me', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
+    const userContext = await authenticate(req, reply);
+    if (!userContext) return;
+
+    if (userContext.isPat) {
+      return reply.send({ user: userContext });
+    }
+
+    const userRes = usersRepo.findById(userContext.id);
+    if (!userRes.ok || !userRes.value) {
+      return reply.send({ user: userContext });
+    }
+
+    const {
+      passwordHash: _,
+      twoFactorSecretEnc: __,
+      failedAttempts: ___,
+      lockedUntil: ____,
+      ...user
+    } = userRes.value;
+
     return reply.send({ user });
   });
+
+  const handleChangePassword = async (req: FastifyRequest, reply: FastifyReply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    const parsed = ChangePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ code: 'VALIDATION_ERROR', errors: parsed.error.errors });
+    }
+
+    const changeRes = await authService.changePassword(
+      user.id,
+      parsed.data.currentPassword,
+      parsed.data.newPassword,
+      req.ip,
+    );
+
+    if (!changeRes.ok) {
+      const statusCode = changeRes.error.code === 'UNAUTHORIZED' ? 401 : 400;
+      return reply.status(statusCode).send({
+        code: changeRes.error.code,
+        message: changeRes.error.message,
+      });
+    }
+
+    return reply.send({
+      success: true,
+      message: 'Password changed successfully',
+      user: changeRes.value,
+    });
+  };
+
+  fastify.post('/api/v1/auth/change-password', handleChangePassword);
+  fastify.post('/api/v1/auth/password', handleChangePassword);
 
   fastify.get('/api/v1/auth/2fa/status', async (req, reply) => {
     const user = await authenticate(req, reply);

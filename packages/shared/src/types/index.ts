@@ -342,6 +342,7 @@ export interface User {
   readonly roleId: string;
   readonly roleName: RoleName;
   readonly twoFactorEnabled: boolean;
+  readonly mustChangePassword?: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
 }

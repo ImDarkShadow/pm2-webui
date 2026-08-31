@@ -8,6 +8,7 @@ import {
   Shield,
   ShieldCheck,
   KeyRound,
+  Lock,
   Laptop,
   Smartphone,
   Copy,
@@ -17,9 +18,11 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { TwoFactorSetupModal } from '../components/security/TwoFactorSetupModal.js';
+import { ChangePasswordModal } from '../components/security/ChangePasswordModal.js';
 
 export const SettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'cluster' | 'security'>('cluster');
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   // Cluster Policies
   const [settings, setSettings] = useState<any>({
@@ -372,6 +375,32 @@ export const SettingsPage: React.FC = () => {
       ) : (
         /* Security & 2FA Tab */
         <div className="space-y-6">
+          {/* Account Password Card */}
+          <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl p-5 shadow-sm space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Lock size={17} className="text-emerald-500" />
+                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Account Password
+                  </h2>
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Update your dashboard login password. Minimum 8 characters with letters and
+                  numbers.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsChangePasswordOpen(true)}
+                className="px-3.5 py-1.5 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-zinc-100 dark:text-zinc-950 text-xs font-semibold rounded-lg transition-colors shadow-xs"
+              >
+                Change Password
+              </button>
+            </div>
+          </div>
+
           {/* Two-Factor Authentication Card */}
           <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl p-5 shadow-sm space-y-4">
             <div className="flex items-start justify-between">
@@ -765,6 +794,13 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+        isForced={false}
+      />
     </div>
   );
 };

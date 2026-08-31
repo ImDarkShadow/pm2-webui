@@ -14,11 +14,13 @@ interface AuthState {
   isLoading: boolean;
   login: (username: string, password: string) => Promise<LoginResponse>;
   verify2FA: (tempToken: string, code: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  updateUser: (partial: Partial<UserSession>) => void;
   logout: () => void;
   checkAuth: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
@@ -34,6 +36,27 @@ export const useAuthStore = create<AuthState>((set) => ({
   verify2FA: async (tempToken, code) => {
     const data = await api.verify2FA(tempToken, code);
     set({ user: data.user, isAuthenticated: true });
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    const res = await api.changePassword(currentPassword, newPassword);
+    const currentUser = get().user;
+    if (currentUser) {
+      set({
+        user: {
+          ...currentUser,
+          ...res.user,
+          mustChangePassword: false,
+        },
+      });
+    }
+  },
+
+  updateUser: (partial) => {
+    const currentUser = get().user;
+    if (currentUser) {
+      set({ user: { ...currentUser, ...partial } });
+    }
   },
 
   logout: () => {

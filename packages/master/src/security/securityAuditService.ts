@@ -26,6 +26,7 @@ export type SecurityAuditEvent =
   | 'token:used'
   | 'user:created'
   | 'user:password_changed'
+  | 'user:password_change_failed'
   | 'security:alert';
 
 export interface LogSecurityEventOptions {
