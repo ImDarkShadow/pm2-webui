@@ -2,10 +2,20 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
+
+const getVersion = () => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+    return pkg.version || '1.1.0';
+  } catch {
+    return '1.1.0';
+  }
+};
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -36,7 +46,7 @@ Examples:
 }
 
 if (command === '--version' || command === '-v') {
-  console.log('pm2-webui v1.0.0');
+  console.log(`pm2-webui v${getVersion()}`);
   process.exit(0);
 }
 
