@@ -1303,6 +1303,13 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
       to: toTs,
     });
     if (!tunnelRes.ok) {
+      const latest = relayProxy.getLatestMetricsForNode(nodeId);
+      if (latest) {
+        return reply.send({
+          current: latest,
+          history: [],
+        });
+      }
       return reply
         .status(502)
         .send({ code: tunnelRes.error.code, message: tunnelRes.error.message });

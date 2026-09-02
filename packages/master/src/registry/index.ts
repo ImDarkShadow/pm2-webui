@@ -196,12 +196,14 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
       return err(createAppError('FORBIDDEN', `Node is ${node.status}`));
     }
 
+    let finalStatus = node.status;
     if (node.status === 'online' || node.status === 'offline') {
       nodesRepo.updateStatus(agentId, 'online');
+      finalStatus = 'online';
     }
 
     return ok({
-      status: node.status,
+      status: finalStatus,
       masterVersion: '1.0.0',
       serverTime: Date.now(),
     });

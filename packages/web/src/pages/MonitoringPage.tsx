@@ -80,9 +80,9 @@ export const MonitoringPage: React.FC = () => {
       }
 
       // If database history is scarce on first boot, seed with current host metrics
-      if (formatted.length < 2 && data.current?.host) {
-        const h = data.current.host;
-        const totalMem = (h.memory?.used || 0) + (h.memory?.free || 1);
+      if (formatted.length < 2 && (data.current?.host || data.current?.cpu || data.current?.memory)) {
+        const h = data.current.host || data.current;
+        const totalMem = h.memory?.total || (h.memory?.used || 0) + (h.memory?.free || 1);
         const memPercent = Math.min(
           100,
           Math.max(0, Math.round(((h.memory?.used || 0) / totalMem) * 100)),

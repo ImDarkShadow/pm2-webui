@@ -93,9 +93,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               formatted.unshift({ ...formatted[0], time: 'Initial' });
             }
             setMetricsHistory(formatted);
-          } else if (metricsData.current?.host) {
-            const h = metricsData.current.host;
-            const totalMem = (h.memory?.used || 0) + (h.memory?.free || 1);
+          } else if (metricsData.current?.host || metricsData.current?.cpu || metricsData.current?.memory) {
+            const h = metricsData.current.host || metricsData.current;
+            const totalMem = h.memory?.total || (h.memory?.used || 0) + (h.memory?.free || 1);
             const p = {
               time: 'Now',
               cpu: h.cpu?.usagePercent ?? 0,

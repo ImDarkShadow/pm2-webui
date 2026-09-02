@@ -13,6 +13,8 @@ import {
 import { AgentMetaRepo } from '../db/repos/agentMetaRepo.js';
 import { Pm2Manager } from '../pm2/index.js';
 import { LogEngine } from '../logging/index.js';
+import { MetricsCollector } from '../metrics/index.js';
+import { AgentMetricsRepo } from '../db/repos/agentMetricsRepo.js';
 
 export interface MasterWsClientDeps {
   readonly masterWsUrl: string;
@@ -23,6 +25,8 @@ export interface MasterWsClientDeps {
   readonly agentMetaRepo: AgentMetaRepo;
   readonly pm2Manager: Pm2Manager;
   readonly logEngine: LogEngine;
+  readonly metricsCollector?: MetricsCollector;
+  readonly metricsRepo?: AgentMetricsRepo;
   readonly onStatusChange?: (
     status: 'connected' | 'handshaking' | 'enrolled' | 'disconnected',
   ) => void;
@@ -50,6 +54,8 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
     agentMetaRepo,
     pm2Manager,
     logEngine,
+    metricsCollector,
+    metricsRepo,
     onStatusChange,
     logger,
   } = deps;
@@ -107,7 +113,7 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
         case WSMessageType.AGENT_HANDSHAKE_ACK: {
           const ack = msg.payload as HandshakeAckPayload;
           logger?.info(`Handshake ACK received. Agent status on Master: ${ack.status}`);
-          enrolled = ack.status === 'online';
+          enrolled = ack.status === 'online' || (ack.status as string) === 'pending_approval';
           onStatusChange?.(enrolled ? 'enrolled' : 'connected');
 
           // Start Heartbeat
@@ -179,6 +185,48 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
               payload: {
                 tunnelId: openPayload.tunnelId,
                 chunk: JSON.stringify(listRes.ok ? listRes.value : []),
+                isFinal: true,
+              },
+              timestamp: Date.now(),
+            });
+          } else if (openPayload.path.includes('/metrics')) {
+            let currentMetric: any = null;
+            let historyList: any[] = [];
+
+            if (metricsCollector) {
+              const curRes = await metricsCollector.collectCurrentMetrics();
+              if (curRes.ok) {
+                currentMetric = curRes.value;
+              }
+              const recent = metricsCollector.getRecentSamples();
+              const fromTs = openPayload.body?.from || Date.now() - 24 * 60 * 60 * 1000;
+              const toTs = openPayload.body?.to || Date.now();
+
+              let dbHistory: readonly any[] = [];
+              if (metricsRepo) {
+                const histRes = metricsRepo.queryRange(fromTs, toTs);
+                if (histRes.ok) dbHistory = histRes.value;
+              }
+
+              const map = new Map<number, any>();
+              for (const item of dbHistory) {
+                map.set(item.timestamp, item);
+              }
+              for (const item of recent) {
+                map.set(item.timestamp, item);
+              }
+              historyList = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+            }
+
+            send({
+              id: msg.id,
+              type: WSMessageType.RELAY_TUNNEL_DATA,
+              payload: {
+                tunnelId: openPayload.tunnelId,
+                chunk: JSON.stringify({
+                  current: currentMetric,
+                  history: historyList.slice(-500),
+                }),
                 isFinal: true,
               },
               timestamp: Date.now(),
@@ -264,7 +312,7 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
   };
 
   const sendMetrics = (frame: MetricFrame) => {
-    if (enrolled) {
+    if (enrolled || isConnected()) {
       send({
         id: Math.random().toString(36).substring(2, 9),
         type: WSMessageType.METRICS_FRAME,

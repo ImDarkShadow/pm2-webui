@@ -108,23 +108,8 @@ export const createAgentCore = (deps: AgentCoreDeps = {}): AgentCore => {
     logger,
   });
 
-  // 5. Master WS Client
+  // 5. Metrics Collector
   let masterWsClient: MasterWsClient | null = null;
-  if (config.masterWsUrl) {
-    masterWsClient = createMasterWsClient({
-      masterWsUrl: config.masterWsUrl,
-      agentId,
-      hostname: config.hostname,
-      port: config.port,
-      joinToken: config.joinToken,
-      agentMetaRepo,
-      pm2Manager,
-      logEngine,
-      logger,
-    });
-  }
-
-  // 6. Metrics Collector
   const metricsCollector = createMetricsCollector({
     metricsRepo,
     pm2Manager,
@@ -135,6 +120,23 @@ export const createAgentCore = (deps: AgentCoreDeps = {}): AgentCore => {
     },
     logger,
   });
+
+  // 6. Master WS Client
+  if (config.masterWsUrl) {
+    masterWsClient = createMasterWsClient({
+      masterWsUrl: config.masterWsUrl,
+      agentId,
+      hostname: config.hostname,
+      port: config.port,
+      joinToken: config.joinToken,
+      agentMetaRepo,
+      pm2Manager,
+      logEngine,
+      metricsCollector,
+      metricsRepo,
+      logger,
+    });
+  }
 
   // 7. Retention Cleaner
   const retentionCleaner = createRetentionCleaner({

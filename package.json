@@ -35,7 +35,7 @@
     "logo-dark.svg"
   ],
   "scripts": {
-    "bundle": "esbuild packages/master/src/index.ts --bundle --platform=node --format=esm --outfile=dist/master.js --packages=external && esbuild packages/agent-core/src/index.ts --bundle --platform=node --format=esm --outfile=dist/agent.js --packages=external",
+    "bundle": "node scripts/bundle.js",
     "prepublishOnly": "pnpm build",
     "build": "pnpm -r run build && pnpm run bundle",
     "typecheck": "pnpm -r run typecheck",
