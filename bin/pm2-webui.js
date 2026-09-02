@@ -57,9 +57,13 @@ const remainingArgs =
     : args;
 
 if (command === 'agent' || command === 'worker') {
-  targetScript = path.join(rootDir, 'packages/agent-core/dist/index.js');
+  targetScript = fs.existsSync(path.join(rootDir, 'dist/agent.js'))
+    ? path.join(rootDir, 'dist/agent.js')
+    : path.join(rootDir, 'packages/agent-core/dist/index.js');
 } else {
-  targetScript = path.join(rootDir, 'packages/master/dist/index.js');
+  targetScript = fs.existsSync(path.join(rootDir, 'dist/master.js'))
+    ? path.join(rootDir, 'dist/master.js')
+    : path.join(rootDir, 'packages/master/dist/index.js');
 }
 
 const child = spawn(process.execPath, [targetScript, ...remainingArgs], {

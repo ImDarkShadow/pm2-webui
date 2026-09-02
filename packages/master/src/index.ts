@@ -1,5 +1,6 @@
 import path from 'node:path';
 import os from 'node:os';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { generateEd25519KeyPair } from '@pm2-webui/shared';
 import { createAgentCore } from '@pm2-webui/agent-core';
@@ -148,7 +149,15 @@ export const startMasterNode = async () => {
   });
 
   // 7. Start Fastify Server
-  const webDistPath = path.resolve(__dirname, '../../web/dist');
+  const webDistCandidates = [
+    process.env.WEB_DIST_PATH,
+    path.resolve(__dirname, '../../web/dist'),
+    path.resolve(__dirname, '../packages/web/dist'),
+    path.resolve(__dirname, './packages/web/dist'),
+    path.resolve(process.cwd(), 'packages/web/dist'),
+  ].filter((p): p is string => Boolean(p && fs.existsSync(p)));
+
+  const webDistPath = webDistCandidates[0] || path.resolve(__dirname, '../packages/web/dist');
   const server = await createMasterServer({
     port,
     authService,

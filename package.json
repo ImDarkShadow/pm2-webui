@@ -1,16 +1,16 @@
 {
   "name": "pm2-webui",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Modern multi-node PM2 cluster management dashboard and real-time control plane",
   "type": "module",
   "bin": {
-    "pm2-webui": "./bin/pm2-webui.js"
+    "pm2-webui": "bin/pm2-webui.js"
   },
   "author": "ImDarkShadow",
   "license": "AGPL-3.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ImDarkShadow/pm2-webui.git"
+    "url": "git+https://github.com/ImDarkShadow/pm2-webui.git"
   },
   "bugs": {
     "url": "https://github.com/ImDarkShadow/pm2-webui/issues"
@@ -27,22 +27,17 @@
   ],
   "files": [
     "bin",
-    "packages/master/dist",
-    "packages/master/package.json",
-    "packages/agent-core/dist",
-    "packages/agent-core/package.json",
-    "packages/shared/dist",
-    "packages/shared/package.json",
+    "dist",
     "packages/web/dist",
-    "packages/web/package.json",
     "LICENSE",
     "README.md",
     "logo-light.svg",
     "logo-dark.svg"
   ],
   "scripts": {
+    "bundle": "esbuild packages/master/src/index.ts --bundle --platform=node --format=esm --outfile=dist/master.js --packages=external && esbuild packages/agent-core/src/index.ts --bundle --platform=node --format=esm --outfile=dist/agent.js --packages=external",
     "prepublishOnly": "pnpm build",
-    "build": "pnpm -r run build",
+    "build": "pnpm -r run build && pnpm run bundle",
     "typecheck": "pnpm -r run typecheck",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
@@ -75,6 +70,7 @@
     "@types/node": "^22.13.4",
     "@typescript-eslint/eslint-plugin": "^8.24.1",
     "@typescript-eslint/parser": "^8.24.1",
+    "esbuild": "^0.28.2",
     "eslint": "^9.20.1",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.3",
