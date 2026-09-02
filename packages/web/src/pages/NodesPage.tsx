@@ -203,7 +203,7 @@ export const NodesPage: React.FC = () => {
                     <StatusBadge status={node.status} />
                   </td>
                   <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 font-mono">
-                    v{node.version || '1.0.0'}
+                    {node.version ? `v${node.version}` : '—'}
                   </td>
                   <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400">
                     {new Date(node.lastSeenAt || Date.now()).toLocaleTimeString()}

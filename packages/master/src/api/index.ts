@@ -2032,8 +2032,19 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   // 8. Agent WebSocket Handshake Route
-  fastify.get('/api/v1/agent/connect', { websocket: true }, (socket) => {
+  fastify.get('/api/v1/agent/connect', { websocket: true }, (socket, req) => {
     let connectedAgentId: string | null = null;
+    const forwarded = req.headers['x-forwarded-for'];
+    const remoteIp =
+      (typeof forwarded === 'string'
+        ? forwarded.split(',')[0]?.trim()
+        : Array.isArray(forwarded)
+          ? forwarded[0]
+          : null) ||
+      req.ip ||
+      req.socket?.remoteAddress ||
+      '127.0.0.1';
+    const cleanRemoteIp = remoteIp.replace(/^::ffff:/, '');
 
     socket.on('message', (data: any) => {
       try {
@@ -2043,7 +2054,17 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
           const init = msg.payload as HandshakeInitPayload;
           connectedAgentId = init.agentId;
 
-          const challengeRes = nodeRegistry.initiateHandshake(init);
+          const effectiveIp =
+            init.ipAddress && init.ipAddress !== '127.0.0.1' && init.ipAddress !== '::1'
+              ? init.ipAddress
+              : cleanRemoteIp !== '127.0.0.1' && cleanRemoteIp !== '::1'
+                ? cleanRemoteIp
+                : init.ipAddress || '127.0.0.1';
+
+          const challengeRes = nodeRegistry.initiateHandshake({
+            ...init,
+            ipAddress: effectiveIp,
+          });
           if (challengeRes.ok) {
             socket.send(
               JSON.stringify({

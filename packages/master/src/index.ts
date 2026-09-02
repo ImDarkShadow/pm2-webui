@@ -2,7 +2,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { generateEd25519KeyPair } from '@pm2-webui/shared';
+import { generateEd25519KeyPair, APP_VERSION } from '@pm2-webui/shared';
 import { createAgentCore } from '@pm2-webui/agent-core';
 import {
   createMasterDatabase,
@@ -143,7 +143,7 @@ export const startMasterNode = async () => {
     publicKey: masterKeyPair.publicKey,
     connectivityMode: 'direct',
     status: 'online',
-    version: '1.0.0',
+    version: APP_VERSION,
     enrolledAt: Date.now(),
     lastSeenAt: Date.now(),
   });

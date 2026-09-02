@@ -17,6 +17,9 @@ await Promise.all([
     target: 'node20',
     outfile: 'dist/master.js',
     external,
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
   }),
   esbuild.build({
     entryPoints: ['packages/agent-core/src/index.ts'],
@@ -26,6 +29,9 @@ await Promise.all([
     target: 'node20',
     outfile: 'dist/agent.js',
     external,
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
   }),
 ]);
 

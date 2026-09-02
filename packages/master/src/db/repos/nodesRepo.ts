@@ -60,6 +60,7 @@ export const createNodesRepo = (deps: NodesRepoDeps): NodesRepo => {
       hostname = excluded.hostname,
       ip_address = excluded.ip_address,
       port = excluded.port,
+      connectivity_mode = excluded.connectivity_mode,
       version = excluded.version,
       last_seen_at = excluded.last_seen_at
   `);

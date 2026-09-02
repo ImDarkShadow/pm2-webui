@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import os from 'node:os';
 import {
   WSMessage,
   WSMessageType,
@@ -9,6 +10,7 @@ import {
   ProcessActionRequest,
   signData,
   MetricFrame,
+  APP_VERSION,
 } from '@pm2-webui/shared';
 import { AgentMetaRepo } from '../db/repos/agentMetaRepo.js';
 import { Pm2Manager } from '../pm2/index.js';
@@ -20,6 +22,7 @@ export interface MasterWsClientDeps {
   readonly masterWsUrl: string;
   readonly agentId: string;
   readonly hostname: string;
+  readonly ipAddress?: string;
   readonly port: number;
   readonly joinToken?: string;
   readonly agentMetaRepo: AgentMetaRepo;
@@ -49,6 +52,7 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
     masterWsUrl,
     agentId,
     hostname,
+    ipAddress,
     port,
     joinToken,
     agentMetaRepo,
@@ -257,11 +261,30 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
         // Send Handshake Init
         const keyPairRes = agentMetaRepo.getKeyPair();
         if (keyPairRes.ok && keyPairRes.value) {
+          let detectedIp = ipAddress;
+          if (!detectedIp || detectedIp === '127.0.0.1' || detectedIp === 'localhost') {
+            try {
+              const ifaces = os.networkInterfaces();
+              for (const name of Object.keys(ifaces)) {
+                for (const iface of ifaces[name] || []) {
+                  if (iface.family === 'IPv4' && !iface.internal) {
+                    detectedIp = iface.address;
+                    break;
+                  }
+                }
+                if (detectedIp && detectedIp !== '127.0.0.1') break;
+              }
+            } catch {
+              // fallback
+            }
+          }
+
           const initPayload: HandshakeInitPayload = {
             agentId,
             publicKey: keyPairRes.value.publicKey,
             hostname,
-            version: '1.0.0',
+            ipAddress: detectedIp || '127.0.0.1',
+            version: APP_VERSION,
             port,
             joinToken,
           };

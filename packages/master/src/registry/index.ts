@@ -1,6 +1,7 @@
 import {
   NodeState,
   NodeStatus,
+  ConnectivityMode,
   Result,
   ok,
   err,
@@ -11,6 +12,7 @@ import {
   HandshakeInitPayload,
   HandshakeChallengePayload,
   HandshakeAckPayload,
+  APP_VERSION,
 } from '@pm2-webui/shared';
 import { NodesRepo } from '../db/repos/nodesRepo.js';
 import { AuditRepo } from '../db/repos/auditRepo.js';
@@ -90,20 +92,26 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
       init.joinToken === clusterJoinToken,
     );
 
+    const initialStatus: NodeStatus = isValidJoinToken ? 'online' : 'pending';
+    const isLoopback =
+      init.ipAddress === '127.0.0.1' ||
+      init.ipAddress === '::1' ||
+      init.ipAddress === 'localhost';
+    const connectivityMode: ConnectivityMode = isLoopback ? 'direct' : 'relay';
+
     // Check if node exists
     const existingRes = nodesRepo.findById(init.agentId);
     if (existingRes.ok && !existingRes.value) {
       // Register node (auto-enroll as online if valid join token is provided, else pending)
-      const initialStatus: NodeStatus = isValidJoinToken ? 'online' : 'pending';
       const newNode: NodeState = {
         id: init.agentId,
         hostname: init.hostname,
         ipAddress: init.ipAddress ?? '127.0.0.1',
         port: init.port,
         publicKey: init.publicKey,
-        connectivityMode: 'unknown',
+        connectivityMode,
         status: initialStatus,
-        version: init.version,
+        version: init.version || APP_VERSION,
         enrolledAt: Date.now(),
         lastSeenAt: Date.now(),
       };
@@ -125,27 +133,41 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
           }),
         });
       }
-    } else if (
-      existingRes.ok &&
-      existingRes.value &&
-      existingRes.value.status === 'pending' &&
-      isValidJoinToken
-    ) {
-      nodesRepo.updateStatus(init.agentId, 'online');
-      logger?.info?.(
-        `Pending node ${init.agentId} (${init.hostname}) auto-approved via valid cluster join token`,
-      );
-      auditRepo.insert({
-        userId: 'system:join-token',
-        nodeId: init.agentId,
-        action: 'node:auto_enroll',
-        status: 'success',
-        ipAddress: init.ipAddress ?? '127.0.0.1',
-        detailsJson: JSON.stringify({
-          hostname: init.hostname,
-          reason: 'Pending node authenticated with valid cluster join token',
-        }),
+    } else if (existingRes.ok && existingRes.value) {
+      const existingNode = existingRes.value;
+      const targetStatus =
+        existingNode.status === 'pending' && isValidJoinToken ? 'online' : existingNode.status;
+
+      // Update existing node's latest IP, version, connectivity mode, and last seen
+      nodesRepo.create({
+        id: init.agentId,
+        hostname: init.hostname,
+        ipAddress: init.ipAddress ?? existingNode.ipAddress,
+        port: init.port,
+        publicKey: init.publicKey,
+        connectivityMode,
+        status: targetStatus,
+        version: init.version || existingNode.version || APP_VERSION,
+        enrolledAt: existingNode.enrolledAt,
+        lastSeenAt: Date.now(),
       });
+
+      if (existingNode.status === 'pending' && isValidJoinToken) {
+        logger?.info?.(
+          `Pending node ${init.agentId} (${init.hostname}) auto-approved via valid cluster join token`,
+        );
+        auditRepo.insert({
+          userId: 'system:join-token',
+          nodeId: init.agentId,
+          action: 'node:auto_enroll',
+          status: 'success',
+          ipAddress: init.ipAddress ?? '127.0.0.1',
+          detailsJson: JSON.stringify({
+            hostname: init.hostname,
+            reason: 'Pending node authenticated with valid cluster join token',
+          }),
+        });
+      }
     }
 
     return ok({
