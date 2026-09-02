@@ -13,3 +13,5 @@ coverage/
 .env.local
 .turbo
 .cache
+*.tsbuildinfo
+*.tgz
