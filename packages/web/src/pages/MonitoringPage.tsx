@@ -125,8 +125,10 @@ export const MonitoringPage: React.FC = () => {
   }, [selectedNodeId, timeRange, nodes]);
 
   const formatBytes = (bytes?: number): string => {
-    if (!bytes) return '0 GB';
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    if (!bytes || bytes <= 0) return '0 GB';
+    const gb = bytes / (1024 * 1024 * 1024);
+    if (gb >= 1) return `${gb.toFixed(1)} GB`;
+    return `${Math.round(bytes / (1024 * 1024))} MB`;
   };
 
   const chartHeight = isCompact ? 200 : 230;

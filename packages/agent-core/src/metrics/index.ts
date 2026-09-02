@@ -1,4 +1,5 @@
 import si from 'systeminformation';
+import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import {
   MetricFrame,
@@ -143,21 +144,35 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
         ? Number((totalEventLoop / eventLoopCount).toFixed(2))
         : measuredHostEventLoopDelayMs;
 
+    const totalMemBytes = mem?.total && mem.total > 0 ? mem.total : os.totalmem();
+    const freeMemBytes =
+      mem?.available && mem.available > 0
+        ? mem.available
+        : mem?.free && mem.free > 0
+          ? mem.free
+          : os.freemem();
+    const usedMemBytes =
+      mem?.active && mem.active > 0
+        ? mem.active
+        : mem?.used && mem.used > 0
+          ? mem.used
+          : Math.max(0, totalMemBytes - freeMemBytes);
+
     return {
       timestamp,
       cpu: {
-        usagePercent: Math.round(cpuLoad.currentLoad * 10) / 10,
-        cores: cpuLoad.cpus?.length || 1,
-        load1m: cpuLoad.avgLoad ?? 0,
+        usagePercent: Math.round((cpuLoad?.currentLoad ?? 0) * 10) / 10,
+        cores: cpuLoad?.cpus?.length || os.cpus()?.length || 1,
+        load1m: cpuLoad?.avgLoad ?? os.loadavg()[0] ?? 0,
         load5m: 0,
         load15m: 0,
       },
       memory: {
-        total: mem.total,
-        used: mem.active || mem.total - mem.available,
-        free: mem.available,
-        swapTotal: mem.swaptotal,
-        swapUsed: mem.swapused,
+        total: totalMemBytes,
+        used: usedMemBytes,
+        free: freeMemBytes,
+        swapTotal: mem?.swaptotal ?? 0,
+        swapUsed: mem?.swapused ?? 0,
       },
       disk: {
         total: diskTotal,

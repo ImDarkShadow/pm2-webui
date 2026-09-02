@@ -421,7 +421,12 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({ onSelectProcess })
                       </td>
                       <td className={padClass}>{proc.monit?.cpu ?? 0}%</td>
                       <td className={padClass}>
-                        {Math.round((proc.monit?.memory || 0) / 1024 / 1024)} MB
+                        {(() => {
+                          const bytes = proc.monit?.memory ?? (proc as any).memory ?? 0;
+                          if (bytes <= 0) return '0 MB';
+                          const mb = bytes / (1024 * 1024);
+                          return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+                        })()}
                       </td>
                       <td className={padClass}>{proc.restarts ?? 0}</td>
                       <td className={padClass}>

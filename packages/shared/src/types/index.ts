@@ -59,6 +59,8 @@ export interface ProcessInfo {
   readonly pid?: number;
   readonly status: ProcessStatus;
   readonly monit: ProcessMonit;
+  readonly memory?: number; // In bytes (convenience alias for monit.memory)
+  readonly cpu?: number; // In percent (convenience alias for monit.cpu)
   readonly uptime?: number; // timestamp
   readonly restarts: number;
   readonly unstableRestarts: number;

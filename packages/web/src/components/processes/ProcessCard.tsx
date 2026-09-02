@@ -43,8 +43,15 @@ export const ProcessCard: React.FC<ProcessCardProps> = ({
   const isStopped = proc.status === 'stopped';
   const isCompact = density === 'compact';
 
-  const cpuPercent = proc.monit?.cpu ?? 0;
-  const memoryMb = Math.round((proc.monit?.memory || 0) / 1024 / 1024);
+  const cpuPercent = proc.monit?.cpu ?? proc.cpu ?? 0;
+  const rawMemBytes = proc.monit?.memory ?? proc.memory ?? 0;
+  const memoryMbVal = rawMemBytes / (1024 * 1024);
+  const memoryDisplay =
+    rawMemBytes <= 0
+      ? '0 MB'
+      : memoryMbVal >= 10
+        ? `${Math.round(memoryMbVal)} MB`
+        : `${memoryMbVal.toFixed(1)} MB`;
 
   const getStatusPulseColor = () => {
     if (isOnline) return 'bg-emerald-500 shadow-emerald-500/50';
@@ -158,13 +165,13 @@ export const ProcessCard: React.FC<ProcessCardProps> = ({
               <Activity size={11} /> RAM
             </span>
             <span className="font-mono font-semibold text-zinc-800 dark:text-zinc-200">
-              {memoryMb} MB
+              {memoryDisplay}
             </span>
           </div>
           <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300 rounded-full"
-              style={{ width: `${Math.min(100, Math.max(3, (memoryMb / 1024) * 100))}%` }}
+              style={{ width: `${Math.min(100, Math.max(3, (memoryMbVal / 1024) * 100))}%` }}
             />
           </div>
         </div>

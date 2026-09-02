@@ -133,9 +133,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
   const totalRps = processes.reduce((acc, p) => acc + (p.rps || 0), 0);
   const totalMemoryMb = processes.reduce(
-    (acc, p) => acc + Math.round((p.memory || 0) / 1024 / 1024),
+    (acc, p) => acc + Math.round((p.monit?.memory ?? p.memory ?? 0) / 1024 / 1024),
     0,
   );
+  const hostMemoryUsedGb = currentMetrics?.memory?.used
+    ? (currentMetrics.memory.used / (1024 * 1024 * 1024)).toFixed(1)
+    : null;
+  const hostMemoryTotalGb = currentMetrics?.memory?.total
+    ? (currentMetrics.memory.total / (1024 * 1024 * 1024)).toFixed(1)
+    : null;
+  const hostMemoryPercent =
+    currentMetrics?.memory?.total && currentMetrics.memory.total > 0
+      ? Math.round((currentMetrics.memory.used / currentMetrics.memory.total) * 100)
+      : null;
   const onlineNodes = nodes.filter((n) => n.status === 'online');
   const healthyPercent =
     totalProcesses > 0 ? Math.round((onlineProcesses / totalProcesses) * 100) : 100;
@@ -264,18 +274,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <HardDrive size={14} className="text-blue-500" /> Memory
             </span>
             <span className="text-[9px] uppercase font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">
-              RAM
+              {totalMemoryMb > 0 ? 'PM2 RSS' : 'Host RAM'}
             </span>
           </div>
           <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 font-mono tracking-tight">
-            {totalMemoryMb > 1024
-              ? `${(totalMemoryMb / 1024).toFixed(2)} GB`
-              : `${totalMemoryMb} MB`}
+            {totalMemoryMb > 0
+              ? totalMemoryMb > 1024
+                ? `${(totalMemoryMb / 1024).toFixed(2)} GB`
+                : `${totalMemoryMb} MB`
+              : hostMemoryUsedGb
+                ? `${hostMemoryUsedGb} GB`
+                : '0 MB'}
           </div>
           <div className="mt-2 text-[11px] text-zinc-500 flex items-center justify-between">
-            <span>Avg / process:</span>
+            <span>{totalMemoryMb > 0 ? 'Avg / proc (Host):' : 'Host RAM:'}</span>
             <span className="font-mono">
-              {totalProcesses > 0 ? Math.round(totalMemoryMb / totalProcesses) : 0} MB
+              {totalMemoryMb > 0
+                ? `${totalProcesses > 0 ? Math.round(totalMemoryMb / totalProcesses) : 0} MB ${hostMemoryPercent ? `(${hostMemoryPercent}% sys)` : ''}`
+                : hostMemoryTotalGb
+                  ? `${hostMemoryUsedGb}/${hostMemoryTotalGb} GB (${hostMemoryPercent}%)`
+                  : 'Idle'}
             </span>
           </div>
         </div>

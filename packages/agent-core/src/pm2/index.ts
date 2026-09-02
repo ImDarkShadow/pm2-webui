@@ -216,6 +216,8 @@ export const normalizePm2Process = (raw: any): ProcessInfo => {
       memory: Number.isFinite(monit.memory) ? Math.max(0, monit.memory) : 0,
       cpu: Number.isFinite(monit.cpu) ? Math.max(0, monit.cpu) : 0,
     },
+    memory: Number.isFinite(monit.memory) ? Math.max(0, monit.memory) : 0,
+    cpu: Number.isFinite(monit.cpu) ? Math.max(0, monit.cpu) : 0,
     uptime: pm2Env.pm_uptime,
     restarts: Number.isFinite(pm2Env.restart_time) ? pm2Env.restart_time : 0,
     unstableRestarts: Number.isFinite(pm2Env.unstable_restarts) ? pm2Env.unstable_restarts : 0,
