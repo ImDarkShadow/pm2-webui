@@ -9,6 +9,7 @@ import { ProcessesPage } from './pages/ProcessesPage.js';
 import { ProcessDetailPage } from './pages/ProcessDetailPage.js';
 import { LogsPage } from './pages/LogsPage.js';
 import { MonitoringPage } from './pages/MonitoringPage.js';
+import { ErrorTracingPage } from './pages/ErrorTracingPage.js';
 import { PluginsPage } from './pages/PluginsPage.js';
 import { DeploymentsPage } from './pages/DeploymentsPage.js';
 import { GitAppDetailPage } from './pages/GitAppDetailPage.js';
@@ -88,6 +89,8 @@ export const AppContent: React.FC = () => {
       {activeTab === 'logs' && <LogsPage />}
 
       {activeTab === 'monitoring' && <MonitoringPage />}
+
+      {activeTab === 'errors' && <ErrorTracingPage />}
 
       {activeTab === 'plugins' && <PluginsPage />}
 

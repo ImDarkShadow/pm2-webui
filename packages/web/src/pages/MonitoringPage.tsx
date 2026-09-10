@@ -45,7 +45,7 @@ export const MonitoringPage: React.FC = () => {
     const now = Date.now();
 
     try {
-      const data = await api.getMetrics(activeNodeId, now - duration, now, 500);
+      const data = await api.getMetrics(activeNodeId, now - duration, now, 1500);
 
       if (data.current) {
         setCurrentMetrics(data.current.host || data.current);
@@ -60,12 +60,23 @@ export const MonitoringPage: React.FC = () => {
             100,
             Math.max(0, Math.round(((m.memoryUsed || 0) / totalMem) * 100)),
           );
-          return {
-            time: new Date(m.timestamp).toLocaleTimeString([], {
+          const d = new Date(m.timestamp);
+          let timeLabel: string;
+          if (timeRange === '7d' || timeRange === '30d') {
+            timeLabel = `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          } else if (timeRange === '24h') {
+            timeLabel = `${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          } else {
+            timeLabel = d.toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit',
-            }),
+            });
+          }
+
+          return {
+            time: timeLabel,
+            rawTimestamp: m.timestamp,
             cpu: m.cpuUsage ?? 0,
             memory: memPercent,
             swap: Math.round(((m.swapUsed || 0) / ((m.swapUsed || 0) + 1)) * 100),
@@ -95,6 +106,7 @@ export const MonitoringPage: React.FC = () => {
 
         const point = {
           time: nowStr,
+          rawTimestamp: now,
           cpu: h.cpu?.usagePercent ?? 0,
           memory: memPercent,
           swap: Math.round(((h.memory?.swapUsed || 0) / ((h.memory?.swapUsed || 0) + 1)) * 100),
@@ -120,7 +132,13 @@ export const MonitoringPage: React.FC = () => {
 
   useEffect(() => {
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 3000);
+    const pollMs =
+      timeRange === '30d' || timeRange === '7d'
+        ? 30000
+        : timeRange === '24h'
+          ? 10000
+          : 3000;
+    const interval = setInterval(fetchMetrics, pollMs);
     return () => clearInterval(interval);
   }, [selectedNodeId, timeRange, nodes]);
 

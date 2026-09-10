@@ -75,6 +75,7 @@ export const MetricsAreaChart: React.FC<MetricsAreaChartProps> = ({
             fontSize={11}
             tickLine={false}
             axisLine={{ stroke: gridColor }}
+            minTickGap={30}
           />
           <YAxis
             stroke={textColor}

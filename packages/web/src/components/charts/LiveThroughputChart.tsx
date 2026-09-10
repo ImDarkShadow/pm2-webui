@@ -47,6 +47,7 @@ export const LiveThroughputChart: React.FC<LiveThroughputChartProps> = ({
             fontSize={11}
             tickLine={false}
             axisLine={{ stroke: gridColor }}
+            minTickGap={30}
           />
           {/* Left Axis: Throughput (Req/min) */}
           <YAxis

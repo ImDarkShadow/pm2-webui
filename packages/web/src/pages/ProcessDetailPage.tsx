@@ -21,6 +21,9 @@ import {
   Copy,
   Check,
   ExternalLink,
+  AlertOctagon,
+  Flame,
+  CheckCircle2,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useNodeStore } from '../store/nodeStore.js';
@@ -38,7 +41,7 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
   const { selectedNodeId } = useNodeStore();
   const [processInfo, setProcessInfo] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'probes' | 'actions' | 'terminal' | 'env'
+    'overview' | 'probes' | 'errors' | 'actions' | 'terminal' | 'env'
   >('overview');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
@@ -50,6 +53,68 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
 
   // Live streaming time-series history for charts
   const [procMetricsHistory, setProcMetricsHistory] = useState<any[]>([]);
+  // Process-specific Error Traces & Crash Dumps
+  const [procErrors, setProcErrors] = useState<any[]>([]);
+  const [procCrashes, setProcCrashes] = useState<any[]>([]);
+  const [selectedErrorTrace, setSelectedErrorTrace] = useState<any | null>(null);
+  const [copiedStack, setCopiedStack] = useState(false);
+
+  const loadHistoricalMetrics = async () => {
+    if (!selectedNodeId) return;
+    try {
+      const now = Date.now();
+      const past24h = now - 24 * 60 * 60 * 1000;
+      const data = await api.getProcessMetrics(selectedNodeId, processName, past24h, now, 500);
+      if (Array.isArray(data) && data.length > 0) {
+        const formatted = data.map((m: any) => {
+          const d = new Date(m.timestamp);
+          return {
+            time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            rawTimestamp: m.timestamp,
+            cpu: m.cpuPercent ?? 0,
+            memory: Math.round((m.memoryBytes || 0) / (1024 * 1024)),
+            heapUsed: m.heapUsed ? Math.round(m.heapUsed / (1024 * 1024)) : undefined,
+            heapTotal: m.heapTotal ? Math.round(m.heapTotal / (1024 * 1024)) : undefined,
+            eventLoop: m.eventLoopDelayMs ?? 0,
+            rps: m.rps ?? 0,
+            latency: m.latencyMs ?? 0,
+          };
+        });
+        setProcMetricsHistory(formatted);
+      }
+    } catch (err) {
+      console.error('Failed to load historical process metrics', err);
+    }
+  };
+
+  const loadProcessObservability = async () => {
+    if (!selectedNodeId) return;
+    try {
+      const [errs, crs] = await Promise.all([
+        api.getErrorTraces(selectedNodeId, { processName, limit: 50 }).catch(() => []),
+        api.getCrashes(selectedNodeId, processName, 20).catch(() => []),
+      ]);
+      setProcErrors(Array.isArray(errs) ? errs : []);
+      setProcCrashes(Array.isArray(crs) ? crs : []);
+    } catch (e) {
+      console.error('Failed to load process errors/crashes', e);
+    }
+  };
+
+  const handleResolveProcessError = async (errorId: string) => {
+    if (!selectedNodeId) return;
+    try {
+      await api.resolveErrorTrace(selectedNodeId, errorId);
+      setProcErrors((prev) =>
+        prev.map((t) => (t.id === errorId ? { ...t, resolved: true, resolvedAt: Date.now() } : t)),
+      );
+      if (selectedErrorTrace?.id === errorId) {
+        setSelectedErrorTrace((prev: any) => ({ ...prev, resolved: true, resolvedAt: Date.now() }));
+      }
+    } catch (err: any) {
+      alert(`Failed to resolve error: ${err.message}`);
+    }
+  };
 
   const loadDetails = async () => {
     if (!selectedNodeId) return;
@@ -68,22 +133,21 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
         const memMb = Math.round((found.monit?.memory || 0) / (1024 * 1024));
 
         setProcMetricsHistory((prev) => {
-          const next = [
-            ...prev,
-            {
-              time: nowStr,
-              cpu: found.monit?.cpu || 0,
-              memory: memMb,
-              rps: found.rps || 0,
-              eventLoop: found.eventLoopDelayMs || 0.8,
-            },
-          ];
+          const point = {
+            time: nowStr,
+            rawTimestamp: Date.now(),
+            cpu: found.monit?.cpu || 0,
+            memory: memMb,
+            heapUsed: found.heapUsedMb,
+            heapTotal: found.heapTotalMb,
+            rps: found.rps || 0,
+            eventLoop: found.eventLoopDelayMs || 0.8,
+          };
 
-          // Ensure at least 2 points for Recharts interpolation
-          if (next.length === 1) {
-            return [{ ...next[0], time: 'Start' }, next[0]];
+          if (prev.length === 0) {
+            return [{ ...point, time: 'Start' }, point];
           }
-          return next.slice(-30);
+          return [...prev, point].slice(-60);
         });
       }
 
@@ -97,6 +161,11 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadHistoricalMetrics();
+    loadProcessObservability();
+  }, [selectedNodeId, processName]);
 
   useEffect(() => {
     loadDetails();
@@ -220,11 +289,12 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
         )}
       </div>
 
-      {/* 5 Tab Navigation Bar */}
+      {/* Tab Navigation Bar */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800 pb-2 overflow-x-auto">
         {[
           { id: 'overview', label: 'Resource Overview', icon: Cpu },
           { id: 'probes', label: 'Telemetry & Probes', icon: Activity },
+          { id: 'errors', label: 'Errors & Crashes', icon: AlertOctagon },
           { id: 'actions', label: 'Custom PM2 Actions', icon: PlayCircle },
           { id: 'terminal', label: 'Live Console Stream', icon: TerminalIcon },
           { id: 'env', label: 'Environment & Secrets', icon: ShieldAlert },
@@ -507,6 +577,191 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
               </div>
             )}
           </div>
+
+          {/* V8 Heap Memory Timeline */}
+          <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <Activity size={16} className="text-purple-500" />
+                V8 Heap Allocation & Memory Timeline
+              </h2>
+              <span className="text-xs font-mono text-zinc-400">MB</span>
+            </div>
+            <MetricsAreaChart
+              data={procMetricsHistory}
+              series={[
+                { key: 'memory', label: 'RAM RSS', color: '#a855f7', unit: 'MB' },
+                { key: 'heapUsed', label: 'V8 Heap Used', color: '#ec4899', unit: 'MB' },
+                { key: 'heapTotal', label: 'V8 Heap Total', color: '#38bdf8', unit: 'MB' },
+              ]}
+              height={200}
+              yAxisUnit=" MB"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Process Errors & Crashes */}
+      {activeTab === 'errors' && (
+        <div className="space-y-6">
+          {/* 1. Error Traces Table */}
+          <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <AlertOctagon size={16} className="text-rose-500" />
+                  Exception Groups & Stack Traces ({procErrors.length})
+                </h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Fingerprinted unhandled exceptions detected in {processName}'s logs.
+                </p>
+              </div>
+              <button
+                onClick={loadProcessObservability}
+                className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 text-xs flex items-center gap-1.5 transition-colors"
+              >
+                <RotateCw size={13} /> Refresh
+              </button>
+            </div>
+
+            {procErrors.length === 0 ? (
+              <div className="p-8 text-center text-xs text-zinc-400">
+                <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1.5" />
+                No unhandled error traces recorded for {processName}.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 font-medium">
+                      <th className="py-2.5 px-3">Error</th>
+                      <th className="py-2.5 px-3">Message</th>
+                      <th className="py-2.5 px-3 text-center">Occurrences</th>
+                      <th className="py-2.5 px-3">Last Seen</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/50">
+                    {procErrors.map((err) => (
+                      <tr key={err.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20">
+                        <td className="py-2.5 px-3 font-mono font-semibold text-rose-600 dark:text-rose-400">
+                          {err.errorName || 'Error'}
+                          <span className="block text-[10px] text-zinc-400 font-normal">
+                            #{err.fingerprint?.slice(0, 8)}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 max-w-sm truncate font-mono text-zinc-700 dark:text-zinc-300">
+                          {err.message}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-mono">
+                            {err.occurrenceCount || 1}x
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-zinc-500 font-mono text-[11px]">
+                          {new Date(err.lastSeenAt).toLocaleString([], {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {err.resolved ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600">
+                              <CheckCircle2 size={11} /> Resolved
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600">
+                              <AlertOctagon size={11} /> Active
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right space-x-2 whitespace-nowrap">
+                          <button
+                            onClick={() => setSelectedErrorTrace(err)}
+                            className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-medium text-xs transition-colors"
+                          >
+                            Trace
+                          </button>
+                          {!err.resolved && (
+                            <button
+                              onClick={() => handleResolveProcessError(err.id)}
+                              className="px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium text-xs transition-colors"
+                            >
+                              Resolve
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Process Crash History */}
+          <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl p-5 shadow-sm space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <Flame size={16} className="text-amber-500" />
+                Crash History & Post-Mortems ({procCrashes.length})
+              </h2>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Sudden exits, SIGSEGV/SIGTERM signals, and surrounding output buffer logs.
+              </p>
+            </div>
+
+            {procCrashes.length === 0 ? (
+              <div className="p-8 text-center text-xs text-zinc-400">
+                <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1.5" />
+                No crash events recorded for {processName}. Process is stable.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {procCrashes.map((crash) => (
+                  <div
+                    key={crash.id}
+                    className="p-4 bg-zinc-50 dark:bg-zinc-950/60 rounded-xl border border-zinc-200 dark:border-zinc-800 space-y-3"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-mono text-zinc-500">
+                        {new Date(crash.crashedAt).toLocaleString([], {
+                          dateStyle: 'medium',
+                          timeStyle: 'medium',
+                        })}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-rose-500/10 text-rose-600 font-semibold border border-rose-500/20">
+                          Exit: {crash.exitCode ?? 'N/A'}
+                        </span>
+                        {crash.signal && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                            Signal: {crash.signal}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {crash.logsBefore && crash.logsBefore.length > 0 && (
+                      <div className="p-2.5 bg-zinc-950 rounded-lg font-mono text-[11px] text-zinc-300 max-h-36 overflow-y-auto space-y-0.5">
+                        {crash.logsBefore.map((l: any, i: number) => (
+                          <div key={i} className="flex gap-2">
+                            <span className="text-zinc-600 select-none shrink-0">{l.stream}</span>
+                            <span
+                              className={l.stream === 'stderr' ? 'text-rose-400' : 'text-zinc-300'}
+                            >
+                              {l.message}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -687,6 +942,110 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
                 Apply Scale
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Error Trace Detail Modal */}
+      {selectedErrorTrace && (
+        <Modal
+          isOpen={Boolean(selectedErrorTrace)}
+          onClose={() => setSelectedErrorTrace(null)}
+          title={`Error Details: ${selectedErrorTrace.errorName || 'Unhandled Exception'}`}
+          maxWidth="max-w-3xl"
+        >
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-zinc-50 dark:bg-zinc-950/60 rounded-lg border border-zinc-200 dark:border-zinc-800">
+              <div className="space-y-1 font-mono text-xs">
+                <div>
+                  <span className="text-zinc-400">Process:</span>{' '}
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                    {selectedErrorTrace.processName} (#{selectedErrorTrace.pmId})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400">Fingerprint:</span>{' '}
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    {selectedErrorTrace.fingerprint}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-mono">
+                  {selectedErrorTrace.occurrenceCount || 1} Occurrences
+                </span>
+                {!selectedErrorTrace.resolved && (
+                  <button
+                    onClick={() => handleResolveProcessError(selectedErrorTrace.id)}
+                    className="px-3 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-medium transition-colors"
+                  >
+                    Mark Resolved
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Exception Message:
+              </span>
+              <div className="p-3 bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/20 rounded-lg font-mono text-xs text-rose-700 dark:text-rose-300 select-text">
+                {selectedErrorTrace.message}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Stack Trace:
+                </span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(selectedErrorTrace.stackTrace || '');
+                    setCopiedStack(true);
+                    setTimeout(() => setCopiedStack(false), 2000);
+                  }}
+                  className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                >
+                  {copiedStack ? (
+                    <Check size={12} className="text-emerald-500" />
+                  ) : (
+                    <Copy size={12} />
+                  )}
+                  <span>{copiedStack ? 'Copied' : 'Copy Stack Trace'}</span>
+                </button>
+              </div>
+              <pre className="p-4 bg-zinc-950 text-zinc-300 rounded-lg font-mono text-xs overflow-x-auto max-h-72 select-text border border-zinc-800">
+                {selectedErrorTrace.stackTrace || 'No stack trace available.'}
+              </pre>
+            </div>
+
+            {selectedErrorTrace.contextLogs && selectedErrorTrace.contextLogs.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Surrounding Context Logs:
+                </span>
+                <div className="p-3 bg-zinc-950 rounded-lg font-mono text-[11px] text-zinc-300 max-h-48 overflow-y-auto space-y-1 border border-zinc-800">
+                  {selectedErrorTrace.contextLogs.map((log: any, idx: number) => (
+                    <div key={idx} className="flex gap-2">
+                      <span className="text-zinc-500 select-none">
+                        {new Date(log.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })}
+                      </span>
+                      <span
+                        className={log.stream === 'stderr' ? 'text-rose-400' : 'text-zinc-300'}
+                      >
+                        {log.message}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}

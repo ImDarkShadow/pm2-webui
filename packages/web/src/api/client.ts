@@ -326,14 +326,69 @@ class ApiClient {
     return res.json();
   }
 
-  public async getMetrics(nodeId: string, from?: number, to?: number, limit = 500) {
+  public async getMetrics(nodeId: string, from?: number, to?: number, limit = 500, bucketMs?: number) {
     const params = new URLSearchParams();
     if (from) params.set('from', String(from));
     if (to) params.set('to', String(to));
     params.set('limit', String(limit));
+    if (bucketMs) params.set('bucketMs', String(bucketMs));
 
     const res = await this.fetchWithAuth(`/api/v1/nodes/${nodeId}/metrics?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch node metrics');
+    return res.json();
+  }
+
+  public async getProcessMetrics(
+    nodeId: string,
+    processName: string,
+    from?: number,
+    to?: number,
+    limit = 500,
+    bucketMs?: number,
+  ) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', String(from));
+    if (to) params.set('to', String(to));
+    params.set('limit', String(limit));
+    if (bucketMs) params.set('bucketMs', String(bucketMs));
+
+    const res = await this.fetchWithAuth(
+      `/api/v1/nodes/${nodeId}/processes/${encodeURIComponent(processName)}/metrics?${params.toString()}`,
+    );
+    if (!res.ok) throw new Error('Failed to fetch process metrics');
+    return res.json();
+  }
+
+  public async getErrorTraces(
+    nodeId: string,
+    params: { processName?: string; resolved?: boolean; search?: string; limit?: number } = {},
+  ) {
+    const qs = new URLSearchParams();
+    if (params.processName) qs.set('processName', params.processName);
+    if (params.resolved !== undefined) qs.set('resolved', String(params.resolved));
+    if (params.search) qs.set('search', params.search);
+    if (params.limit) qs.set('limit', String(params.limit));
+
+    const res = await this.fetchWithAuth(`/api/v1/nodes/${nodeId}/errors?${qs.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch error traces');
+    return res.json();
+  }
+
+  public async resolveErrorTrace(nodeId: string, errorId: string) {
+    const res = await this.fetchWithAuth(`/api/v1/nodes/${nodeId}/errors/${encodeURIComponent(errorId)}/resolve`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to resolve error trace');
+    return res.json();
+  }
+
+  public async getCrashes(nodeId: string, processName?: string, limit = 50) {
+    const qs = new URLSearchParams();
+    if (processName) qs.set('processName', processName);
+    if (limit) qs.set('limit', String(limit));
+
+    const res = await this.fetchWithAuth(`/api/v1/nodes/${nodeId}/crashes?${qs.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch crash history');
     return res.json();
   }
 
