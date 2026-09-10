@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   status TEXT NOT NULL DEFAULT 'pending',
   version TEXT NOT NULL,
   last_seen_at INTEGER NOT NULL,
-  enrolled_at INTEGER NOT NULL
+  enrolled_at INTEGER NOT NULL,
+  cpu_cores INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS node_groups (

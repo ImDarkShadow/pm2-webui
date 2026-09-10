@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   List,
   Server,
+  Cpu,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useNodeStore } from '../store/nodeStore.js';
@@ -43,7 +44,10 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({ onSelectProcess })
     { nodeId: string; pmId: number | string }[]
   >([]);
   const [scalingProc, setScalingProc] = useState<ClusterProcessInfo | null>(null);
-  const [targetInstances, setTargetInstances] = useState<number>(2);
+  const [targetInstances, setTargetInstances] = useState<number>(1);
+  const scalingNode = scalingProc ? nodes.find((n) => n.id === scalingProc.nodeId) : undefined;
+  const maxCores = Math.max(scalingProc?.cpuCores || scalingNode?.cpuCores || 1, 1);
+  const halfCores = Math.max(Math.floor(maxCores / 2), 1);
   const [activeLogsProc, setActiveLogsProc] = useState<ClusterProcessInfo | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -353,7 +357,12 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({ onSelectProcess })
                 onToggleSelect={() => toggleSelectTarget(proc.nodeId, proc.pmId)}
                 onAction={handleAction}
                 onOpenLogs={(p) => setActiveLogsProc(p)}
-                onOpenScale={(p) => setScalingProc(p)}
+                onOpenScale={(p) => {
+                  setScalingProc(p);
+                  const node = nodes.find((n) => n.id === p.nodeId);
+                  const cores = Math.max(p.cpuCores || node?.cpuCores || 1, 1);
+                  setTargetInstances(Math.min(p.instances || 1, cores));
+                }}
                 onClickName={() => onSelectProcess(proc.name)}
               />
             );
@@ -500,21 +509,80 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({ onSelectProcess })
         >
           <div className="space-y-4 text-xs">
             <p className="text-zinc-600 dark:text-zinc-400">
-              Set the number of parallel cluster worker processes to scale across this node.
+              Set the number of parallel cluster worker processes for host <span className="font-medium text-zinc-800 dark:text-zinc-200">'{scalingProc.nodeHostname || scalingNode?.hostname || scalingProc.nodeId}'</span>. Scaling is dynamically capped at host CPU core capacity.
             </p>
-            <div>
-              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                Target Instances (1 - 32)
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={32}
-                value={targetInstances}
-                onChange={(e) => setTargetInstances(Number(e.target.value))}
-                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 font-mono"
-              />
+
+            {/* Host Hardware Capacity Indicator */}
+            <div className="flex items-center justify-between p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-800 dark:text-emerald-300">
+              <div className="flex items-center gap-2">
+                <Cpu size={15} className="text-emerald-600 dark:text-emerald-400" />
+                <span className="font-medium">Host CPU Core Limit</span>
+              </div>
+              <span className="font-mono font-bold text-xs bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded text-emerald-900 dark:text-emerald-200">
+                {maxCores} {maxCores === 1 ? 'core' : 'cores'} available
+              </span>
             </div>
+
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-3">
+              <div className="flex items-center justify-between font-medium">
+                <span className="text-zinc-700 dark:text-zinc-300">Target Instances:</span>
+                <span className="text-base font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                  {targetInstances} / {maxCores} {maxCores === 1 ? 'instance' : 'instances'}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={maxCores}
+                value={Math.min(targetInstances, maxCores)}
+                onChange={(e) => setTargetInstances(Number(e.target.value))}
+                className="w-full accent-emerald-500 cursor-pointer"
+                disabled={maxCores <= 1}
+              />
+
+              {/* Quick Preset Buttons */}
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => setTargetInstances(1)}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                    targetInstances === 1
+                      ? 'bg-emerald-600 text-white border-emerald-700 font-medium'
+                      : 'border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                  }`}
+                >
+                  1 (Single)
+                </button>
+                {maxCores > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetInstances(halfCores)}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                      targetInstances === halfCores
+                        ? 'bg-emerald-600 text-white border-emerald-700 font-medium'
+                        : 'border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    Half ({halfCores} cores)
+                  </button>
+                )}
+                {maxCores > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetInstances(maxCores)}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                      targetInstances === maxCores
+                        ? 'bg-emerald-600 text-white border-emerald-700 font-medium'
+                        : 'border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    Max ({maxCores} cores)
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200 dark:border-zinc-800">
               <button
                 onClick={() => setScalingProc(null)}

@@ -393,4 +393,36 @@ describe('Master REST API & Server Integration', () => {
     expect(body.isTracked).toBe(false);
     expect(body.gitApp).toBeNull();
   });
+
+  it('bounds process scaling to available host CPU cores', async () => {
+    // 1. Admin login
+    const loginRes = await server.fastify.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'admin',
+        password: 'adminpassword123',
+      },
+    });
+    const token = JSON.parse(loginRes.body).accessToken;
+
+    const maxCores = Math.max(os.cpus()?.length || 1, 1);
+
+    // 2. Try scaling beyond available CPU cores
+    const rejectRes = await server.fastify.inject({
+      method: 'POST',
+      url: `/api/v1/nodes/${localAgentCore.agentId}/processes/scale`,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      payload: {
+        target: 'app-service',
+        instances: maxCores + 1,
+      },
+    });
+    expect(rejectRes.statusCode).toBe(400);
+    const rejectBody = JSON.parse(rejectRes.body);
+    expect(rejectBody.code).toBe('VALIDATION_ERROR');
+    expect(rejectBody.message).toContain(`Cannot scale process beyond the ${maxCores} available CPU core(s)`);
+  });
 });

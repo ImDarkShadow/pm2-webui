@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import os from 'node:os';
 import { normalizePm2Process, createPm2Manager } from './pm2/index.js';
 
 describe('PM2 Telemetry Normalization & Security Ingestion', () => {
@@ -71,12 +72,13 @@ describe('PM2 Telemetry Normalization & Security Ingestion', () => {
     const resZero = await manager.scaleProcess('api-service', 0);
     expect(resZero.ok).toBe(false);
 
-    // Invalid instances: 100 (> 32)
-    const resTooHigh = await manager.scaleProcess('api-service', 100);
+    // Invalid instances: greater than available host CPU cores
+    const maxCores = Math.max(os.cpus()?.length || 1, 1);
+    const resTooHigh = await manager.scaleProcess('api-service', maxCores + 1);
     expect(resTooHigh.ok).toBe(false);
 
-    // Valid instances: 4
-    const resValid = await manager.scaleProcess('api-service', 4);
+    // Valid instances: within 1..maxCores
+    const resValid = await manager.scaleProcess('api-service', 1);
     expect(resValid.ok).toBe(true);
   });
 

@@ -36,6 +36,7 @@ import {
   ErrorTraceQuerySchema,
 } from '@pm2-webui/shared';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import {
   AuthService,
@@ -641,12 +642,22 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
       return reply.status(500).send({ code: nodesRes.error.code, message: nodesRes.error.message });
     }
 
-    // Annotate with live connectivity status
-    const annotated = nodesRes.value.map((n) => ({
-      ...n,
-      isOnline: n.id === localAgentCore.agentId || relayProxy.isAgentConnected(n.id),
-      isMaster: n.id === localAgentCore.agentId,
-    }));
+    // Annotate with live connectivity status and hardware capacity
+    const annotated = nodesRes.value.map((n) => {
+      const latestMetrics = relayProxy.getLatestMetricsForNode(n.id);
+      const cpuCores =
+        n.cpuCores ||
+        (n.id === localAgentCore.agentId
+          ? os.cpus()?.length || 1
+          : latestMetrics?.host?.cpu?.cores || undefined);
+
+      return {
+        ...n,
+        cpuCores,
+        isOnline: n.id === localAgentCore.agentId || relayProxy.isAgentConnected(n.id),
+        isMaster: n.id === localAgentCore.agentId,
+      };
+    });
 
     return reply.send(annotated);
   });
@@ -661,8 +672,16 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
       return reply.status(404).send({ code: 'NOT_FOUND', message: 'Node not found' });
     }
 
+    const latestMetrics = relayProxy.getLatestMetricsForNode(nodeId);
+    const cpuCores =
+      nodeRes.value.cpuCores ||
+      (nodeId === localAgentCore.agentId
+        ? os.cpus()?.length || 1
+        : latestMetrics?.host?.cpu?.cores || undefined);
+
     return reply.send({
       ...nodeRes.value,
+      cpuCores,
       isOnline: nodeId === localAgentCore.agentId || relayProxy.isAgentConnected(nodeId),
       isMaster: nodeId === localAgentCore.agentId,
     });
@@ -853,11 +872,18 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
             procs = res.value;
           }
         }
+        const nodeCores =
+          node.cpuCores ||
+          (node.id === localAgentCore.agentId
+            ? os.cpus()?.length || 1
+            : relayProxy.getLatestMetricsForNode(node.id)?.host?.cpu?.cores || undefined);
+
         return procs.map((p) => ({
           ...p,
           nodeId: node.id,
           nodeHostname: node.hostname,
           nodeIp: node.ipAddress,
+          cpuCores: p.cpuCores || nodeCores,
         })) as ClusterProcessInfo[];
       } catch {
         return [] as ClusterProcessInfo[];
@@ -1068,7 +1094,7 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
     return reply.send({ successful, failed });
   });
 
-  // Dynamic Cluster Scaling (Bounded 1..32, audit-logged)
+  // Dynamic Cluster Scaling (Bounded by host CPU cores, audit-logged)
   fastify.post('/api/v1/nodes/:nodeId/processes/scale', async (req, reply) => {
     const user = await authenticate(req, reply);
     if (!user) return;
@@ -1086,6 +1112,28 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
     }
 
     const { target, instances } = parsed.data;
+
+    // Determine max available CPU cores on target node
+    let maxCores = 1;
+    if (nodeId === localAgentCore.agentId) {
+      maxCores = Math.max(os.cpus()?.length || 1, 1);
+    } else {
+      const nodeRes = nodeRegistry.getNode(nodeId);
+      const metrics = relayProxy.getLatestMetricsForNode(nodeId);
+      maxCores = Math.max(
+        nodeRes.ok && nodeRes.value?.cpuCores
+          ? nodeRes.value.cpuCores
+          : metrics?.host?.cpu?.cores || os.cpus()?.length || 1,
+        1,
+      );
+    }
+
+    if (instances > maxCores) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: `Cannot scale process beyond the ${maxCores} available CPU core(s) on this host`,
+      });
+    }
 
     let res: any;
     if (nodeId === localAgentCore.agentId) {

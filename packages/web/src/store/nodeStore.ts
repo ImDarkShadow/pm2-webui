@@ -11,6 +11,7 @@ interface NodeSummary {
   lastSeenAt?: number;
   isOnline: boolean;
   isMaster?: boolean;
+  cpuCores?: number;
 }
 
 interface NodeStateStore {

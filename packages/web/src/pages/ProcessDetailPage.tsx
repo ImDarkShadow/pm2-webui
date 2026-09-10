@@ -42,7 +42,7 @@ interface ProcessDetailPageProps {
 }
 
 export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processName, onBack }) => {
-  const { selectedNodeId } = useNodeStore();
+  const { selectedNodeId, nodes } = useNodeStore();
   const [processInfo, setProcessInfo] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<
     'overview' | 'probes' | 'errors' | 'actions' | 'terminal' | 'env'
@@ -51,7 +51,10 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
   const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
   const [actionOutput, setActionOutput] = useState<string | null>(null);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
-  const [targetInstances, setTargetInstances] = useState(2);
+  const [targetInstances, setTargetInstances] = useState(1);
+  const currentNode = nodes.find((n) => n.id === selectedNodeId);
+  const maxCores = Math.max(processInfo?.cpuCores || currentNode?.cpuCores || 1, 1);
+  const halfCores = Math.max(Math.floor(maxCores / 2), 1);
   const [loading, setLoading] = useState(true);
   const [copiedCommit, setCopiedCommit] = useState(false);
 
@@ -370,7 +373,10 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
         {processInfo && (
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setScaleModalOpen(true)}
+              onClick={() => {
+                setTargetInstances(Math.min(processInfo.instances || 1, maxCores));
+                setScaleModalOpen(true);
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-xs font-medium text-zinc-800 dark:text-zinc-200 transition-colors shadow-sm"
             >
               <Sliders size={13} /> Scale ({processInfo.instances || 1}x)
@@ -1088,25 +1094,78 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
         >
           <div className="space-y-4 text-xs">
             <p className="text-zinc-600 dark:text-zinc-400">
-              Zero-downtime cluster scaling adjusts the number of parallel worker instances running
-              for this application.
+              Zero-downtime cluster scaling adjusts parallel PM2 worker instances. To maximize throughput and avoid CPU thread contention, scaling is bounded by the host's available physical CPU cores.
             </p>
+
+            {/* Host Hardware Capacity Indicator */}
+            <div className="flex items-center justify-between p-2.5 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 rounded-lg text-sky-800 dark:text-sky-300">
+              <div className="flex items-center gap-2">
+                <Cpu size={15} className="text-sky-600 dark:text-sky-400" />
+                <span className="font-medium">Host CPU Core Limit</span>
+              </div>
+              <span className="font-mono font-bold text-xs bg-sky-100 dark:bg-sky-900/60 px-2 py-0.5 rounded text-sky-900 dark:text-sky-200">
+                {maxCores} {maxCores === 1 ? 'core' : 'cores'} available
+              </span>
+            </div>
 
             <div className="p-4 bg-zinc-100 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-3">
               <div className="flex items-center justify-between font-medium">
                 <span className="text-zinc-700 dark:text-zinc-300">Target Instances:</span>
-                <span className="text-lg font-bold font-mono text-sky-600 dark:text-sky-400">
-                  {targetInstances} instances
+                <span className="text-base font-bold font-mono text-sky-600 dark:text-sky-400">
+                  {targetInstances} / {maxCores} {maxCores === 1 ? 'instance' : 'instances'}
                 </span>
               </div>
               <input
                 type="range"
                 min="1"
-                max="16"
-                value={targetInstances}
+                max={maxCores}
+                value={Math.min(targetInstances, maxCores)}
                 onChange={(e) => setTargetInstances(Number(e.target.value))}
                 className="w-full accent-sky-500 cursor-pointer"
+                disabled={maxCores <= 1}
               />
+
+              {/* Quick Preset Buttons */}
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => setTargetInstances(1)}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                    targetInstances === 1
+                      ? 'bg-sky-500 text-white border-sky-600 font-medium'
+                      : 'border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                  }`}
+                >
+                  1 (Single)
+                </button>
+                {maxCores > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetInstances(halfCores)}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                      targetInstances === halfCores
+                        ? 'bg-sky-500 text-white border-sky-600 font-medium'
+                        : 'border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    Half ({halfCores} cores)
+                  </button>
+                )}
+                {maxCores > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetInstances(maxCores)}
+                    className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                      targetInstances === maxCores
+                        ? 'bg-sky-500 text-white border-sky-600 font-medium'
+                        : 'border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    Max ({maxCores} cores)
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">

@@ -115,6 +115,7 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
         version: init.version || APP_VERSION,
         enrolledAt: Date.now(),
         lastSeenAt: Date.now(),
+        cpuCores: init.cpuCores,
       };
       nodesRepo.create(newNode);
 
@@ -151,6 +152,7 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
         version: init.version || existingNode.version || APP_VERSION,
         enrolledAt: existingNode.enrolledAt,
         lastSeenAt: Date.now(),
+        cpuCores: init.cpuCores ?? existingNode.cpuCores,
       });
 
       if (existingNode.status === 'pending' && isValidJoinToken) {

@@ -1,5 +1,6 @@
 import pm2 from 'pm2';
 import path from 'node:path';
+import os from 'node:os';
 import {
   ProcessInfo,
   ProcessStatus,
@@ -238,6 +239,7 @@ export const normalizePm2Process = (raw: any): ProcessInfo => {
     availableActions: availableActions.length > 0 ? availableActions : undefined,
     customProbes: Object.keys(customProbes).length > 0 ? customProbes : undefined,
     git,
+    cpuCores: os.cpus()?.length || 1,
   };
 };
 
@@ -434,6 +436,13 @@ export const createPm2Manager = (deps: Pm2QueueDeps = {}): Pm2Manager => {
             case 'delete':
               pm2Instance.delete(target, callback);
               break;
+            case 'scale': {
+              const instances = req.options?.instances ?? 1;
+              scaleProcess(target, instances, priority)
+                .then((res) => (res.ok ? resolve() : reject(new Error(res.error.message))))
+                .catch(reject);
+              return;
+            }
             default:
               reject(new Error(`Unsupported action: ${action}`));
           }
@@ -471,10 +480,14 @@ export const createPm2Manager = (deps: Pm2QueueDeps = {}): Pm2Manager => {
     instances: number,
     priority: QueuePriority = 'high',
   ): Promise<Result<void>> => {
-    // Enforce strict server-side bounding
-    if (!Number.isInteger(instances) || instances < 1 || instances > 32) {
+    // Enforce strict bounding to available host CPU cores
+    const maxCores = Math.max(os.cpus()?.length || 1, 1);
+    if (!Number.isInteger(instances) || instances < 1 || instances > maxCores) {
       return err(
-        createAppError('VALIDATION_ERROR', 'Instances must be an integer between 1 and 32'),
+        createAppError(
+          'VALIDATION_ERROR',
+          `Instances must be an integer between 1 and available CPU cores (${maxCores})`,
+        ),
       );
     }
 

@@ -40,7 +40,8 @@ export const createNodesRepo = (deps: NodesRepoDeps): NodesRepo => {
   const findByIdStmt = db.prepare(`
     SELECT id, public_key as publicKey, hostname, ip_address as ipAddress, port,
            connectivity_mode as connectivityMode, status, version,
-           last_seen_at as lastSeenAt, enrolled_at as enrolledAt
+           last_seen_at as lastSeenAt, enrolled_at as enrolledAt,
+           cpu_cores as cpuCores
     FROM nodes
     WHERE id = ?
   `);
@@ -48,21 +49,23 @@ export const createNodesRepo = (deps: NodesRepoDeps): NodesRepo => {
   const findByPublicKeyStmt = db.prepare(`
     SELECT id, public_key as publicKey, hostname, ip_address as ipAddress, port,
            connectivity_mode as connectivityMode, status, version,
-           last_seen_at as lastSeenAt, enrolled_at as enrolledAt
+           last_seen_at as lastSeenAt, enrolled_at as enrolledAt,
+           cpu_cores as cpuCores
     FROM nodes
     WHERE public_key = ?
   `);
 
   const insertNodeStmt = db.prepare(`
-    INSERT INTO nodes (id, public_key, hostname, ip_address, port, connectivity_mode, status, version, last_seen_at, enrolled_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO nodes (id, public_key, hostname, ip_address, port, connectivity_mode, status, version, last_seen_at, enrolled_at, cpu_cores)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       hostname = excluded.hostname,
       ip_address = excluded.ip_address,
       port = excluded.port,
       connectivity_mode = excluded.connectivity_mode,
       version = excluded.version,
-      last_seen_at = excluded.last_seen_at
+      last_seen_at = excluded.last_seen_at,
+      cpu_cores = COALESCE(excluded.cpu_cores, nodes.cpu_cores)
   `);
 
   const updateStatusStmt = db.prepare(`
@@ -141,6 +144,7 @@ export const createNodesRepo = (deps: NodesRepoDeps): NodesRepo => {
         node.version,
         node.lastSeenAt,
         node.enrolledAt,
+        node.cpuCores ?? null,
       );
 
       if (node.groupIds && node.groupIds.length > 0) {
@@ -191,7 +195,8 @@ export const createNodesRepo = (deps: NodesRepoDeps): NodesRepo => {
       let query = `
         SELECT DISTINCT n.id, n.public_key as publicKey, n.hostname, n.ip_address as ipAddress, n.port,
                n.connectivity_mode as connectivityMode, n.status, n.version,
-               n.last_seen_at as lastSeenAt, n.enrolled_at as enrolledAt
+               n.last_seen_at as lastSeenAt, n.enrolled_at as enrolledAt,
+               n.cpu_cores as cpuCores
         FROM nodes n
       `;
       const params: unknown[] = [];

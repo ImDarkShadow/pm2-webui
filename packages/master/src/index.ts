@@ -173,6 +173,7 @@ export const startMasterNode = async () => {
     version: APP_VERSION,
     enrolledAt: Date.now(),
     lastSeenAt: Date.now(),
+    cpuCores: os.cpus()?.length || 1,
   });
 
   // 8. Start Fastify Server

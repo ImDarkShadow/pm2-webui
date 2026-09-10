@@ -59,6 +59,7 @@ export interface HandshakeInitPayload {
   readonly ipAddress?: string;
   readonly port: number;
   readonly joinToken?: string;
+  readonly cpuCores?: number;
 }
 
 export interface HandshakeChallengePayload {

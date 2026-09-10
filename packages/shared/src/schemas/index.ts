@@ -66,7 +66,7 @@ export const ProcessScaleRequestSchema = z.object({
     .number()
     .int()
     .min(1, 'Instances must be at least 1')
-    .max(32, 'Instances capped at 32 for safety'),
+    .max(128, 'Instances capped at 128 for safety'),
 });
 
 export const ProcessActionTriggerRequestSchema = z.object({

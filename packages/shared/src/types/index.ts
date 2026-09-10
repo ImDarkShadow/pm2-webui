@@ -16,6 +16,7 @@ export interface NodeState {
   readonly groupIds?: readonly string[];
   readonly isMaster?: boolean;
   readonly isOnline?: boolean;
+  readonly cpuCores?: number;
 }
 
 export interface NodeGroup {
@@ -85,9 +86,11 @@ export interface ProcessInfo {
   readonly customProbes?: Record<string, CustomProbeValue>;
   // Auto-Detected Git Details
   readonly git?: ProcessGitInfo;
+  // Node Hardware Capacity
+  readonly cpuCores?: number;
 }
 
-export type ProcessAction = 'start' | 'stop' | 'restart' | 'reload' | 'delete';
+export type ProcessAction = 'start' | 'stop' | 'restart' | 'reload' | 'delete' | 'scale';
 
 export interface ProcessActionRequest {
   readonly action: ProcessAction;
@@ -100,7 +103,7 @@ export interface ProcessActionRequest {
 
 export interface ProcessScaleRequest {
   readonly target: string | number; // process name or pm_id
-  readonly instances: number; // 1 <= instances <= 32
+  readonly instances: number; // 1 <= instances <= availableCpuCores
 }
 
 export interface ProcessActionTriggerRequest {

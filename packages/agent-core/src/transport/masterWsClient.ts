@@ -517,6 +517,7 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
             version: APP_VERSION,
             port,
             joinToken,
+            cpuCores: os.cpus()?.length || 1,
           };
           send({
             id: Math.random().toString(36).substring(2, 9),

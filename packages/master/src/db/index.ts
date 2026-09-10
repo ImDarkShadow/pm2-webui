@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   status TEXT NOT NULL DEFAULT 'pending',
   version TEXT NOT NULL,
   last_seen_at INTEGER NOT NULL,
-  enrolled_at INTEGER NOT NULL
+  enrolled_at INTEGER NOT NULL,
+  cpu_cores INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS node_groups (
@@ -293,6 +294,14 @@ export const createMasterDatabase = (deps: MasterDbDeps): MasterDatabase => {
           }
           if (!sessionColNames.has('revoked_at')) {
             db.exec('ALTER TABLE sessions ADD COLUMN revoked_at INTEGER;');
+          }
+        }
+
+        if (tableSet.has('nodes')) {
+          const nodeCols = db.pragma('table_info(nodes)') as { name: string }[];
+          const nodeColNames = new Set(nodeCols.map((c) => c.name));
+          if (!nodeColNames.has('cpu_cores')) {
+            db.exec('ALTER TABLE nodes ADD COLUMN cpu_cores INTEGER;');
           }
         }
 
