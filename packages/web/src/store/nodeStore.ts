@@ -10,6 +10,7 @@ interface NodeSummary {
   version?: string;
   lastSeenAt?: number;
   isOnline: boolean;
+  isMaster?: boolean;
 }
 
 interface NodeStateStore {

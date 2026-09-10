@@ -24,6 +24,10 @@ import {
   AlertOctagon,
   Flame,
   CheckCircle2,
+  RotateCcw,
+  BookmarkCheck,
+  BookmarkPlus,
+  ArrowDownToLine,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useNodeStore } from '../store/nodeStore.js';
@@ -58,6 +62,19 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
   const [procCrashes, setProcCrashes] = useState<any[]>([]);
   const [selectedErrorTrace, setSelectedErrorTrace] = useState<any | null>(null);
   const [copiedStack, setCopiedStack] = useState(false);
+
+  // Process Git Management & Deployments
+  const [gitTracked, setGitTracked] = useState(false);
+  const [, setGitApp] = useState<any | null>(null);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [gitPullLoading, setGitPullLoading] = useState(false);
+  const [rollbackModalOpen, setRollbackModalOpen] = useState(false);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+  const [commitsList, setCommitsList] = useState<any[]>([]);
+  const [commitsLoading, setCommitsLoading] = useState(false);
+  const [selectedCommitHash, setSelectedCommitHash] = useState('');
+  const [customCommitHash, setCustomCommitHash] = useState('');
+  const [gitFeedback, setGitFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadHistoricalMetrics = async () => {
     if (!selectedNodeId) return;
@@ -162,9 +179,103 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
     }
   };
 
+  const checkGitStatus = async () => {
+    if (!selectedNodeId) return;
+    try {
+      const res = await api.getProcessGitStatus(selectedNodeId, processName);
+      setGitTracked(Boolean(res.isTracked));
+      setGitApp(res.gitApp || null);
+    } catch {
+      // Ignored
+    }
+  };
+
+  const handleTrackInDeployments = async () => {
+    if (!selectedNodeId) return;
+    setTrackingLoading(true);
+    setGitFeedback(null);
+    try {
+      const res = await api.trackProcessInDeployments(selectedNodeId, processName);
+      setGitTracked(true);
+      setGitApp(res.app);
+      setGitFeedback({
+        type: 'success',
+        text: res.alreadyTracked
+          ? 'Process is already tracked in Git Deployments.'
+          : 'Process successfully linked to Git Deployments!',
+      });
+    } catch (err: any) {
+      setGitFeedback({ type: 'error', text: `Failed to link deployments: ${err.message}` });
+    } finally {
+      setTrackingLoading(false);
+    }
+  };
+
+  const handleProcessGitPull = async () => {
+    if (!selectedNodeId) return;
+    setGitPullLoading(true);
+    setGitFeedback(null);
+    try {
+      await api.processGitPull(selectedNodeId, processName, true);
+      setGitFeedback({
+        type: 'success',
+        text: 'Git pull & rebase completed. Process reloaded with latest code.',
+      });
+      await loadDetails();
+      await checkGitStatus();
+    } catch (err: any) {
+      setGitFeedback({ type: 'error', text: `Git pull failed: ${err.message}` });
+    } finally {
+      setGitPullLoading(false);
+    }
+  };
+
+  const handleOpenRollbackModal = async () => {
+    if (!selectedNodeId) return;
+    setRollbackModalOpen(true);
+    setCommitsLoading(true);
+    setSelectedCommitHash('');
+    setCustomCommitHash('');
+    try {
+      const res = await api.getProcessGitCommits(selectedNodeId, processName, 20);
+      const commits = res.commits || [];
+      setCommitsList(commits);
+      if (commits.length > 1) {
+        setSelectedCommitHash(commits[1].hash);
+      }
+    } catch (err: any) {
+      setCommitsList([]);
+    } finally {
+      setCommitsLoading(false);
+    }
+  };
+
+  const handleExecuteRollback = async () => {
+    if (!selectedNodeId) return;
+    const targetHash = (customCommitHash || selectedCommitHash).trim();
+    if (!targetHash) return;
+
+    setRollbackLoading(true);
+    try {
+      await api.processGitRollback(selectedNodeId, processName, targetHash);
+      setRollbackModalOpen(false);
+      setGitFeedback({
+        type: 'success',
+        text: `Rollback to ${targetHash.slice(0, 7)} successful. Process reloaded.`,
+      });
+      await loadDetails();
+      await checkGitStatus();
+    } catch (err: any) {
+      alert(`Rollback failed: ${err.message}`);
+    } finally {
+      setRollbackLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadHistoricalMetrics();
     loadProcessObservability();
+    checkGitStatus();
   }, [selectedNodeId, processName]);
 
   useEffect(() => {
@@ -386,29 +497,99 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
 
           {/* Git & Version Control Details (Auto-Detected) */}
           <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <GitBranch size={16} className="text-sky-500" />
                 <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   Version Control & Git Information
                 </h2>
               </div>
-              {processInfo?.git ? (
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                    processInfo.git.isDirty
-                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                  }`}
-                >
-                  {processInfo.git.isDirty ? 'Uncommitted Local Changes' : 'Clean Working Tree'}
-                </span>
-              ) : (
-                <span className="text-[11px] text-zinc-400 font-mono">
-                  No Git repository detected
-                </span>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {processInfo?.git ? (
+                  <>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        processInfo.git.isDirty
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                          : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                      }`}
+                    >
+                      {processInfo.git.isDirty ? 'Uncommitted Local Changes' : 'Clean Working Tree'}
+                    </span>
+
+                    {/* Track in Deployments Badge or Button */}
+                    {gitTracked ? (
+                      <a
+                        href="/deployments"
+                        className="px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        title="View registered deployment application"
+                      >
+                        <BookmarkCheck size={13} />
+                        <span>Tracked in Deployments</span>
+                        <ExternalLink size={10} />
+                      </a>
+                    ) : (
+                      <button
+                        onClick={handleTrackInDeployments}
+                        disabled={trackingLoading}
+                        className="px-2.5 py-1 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        title="Register process into Git Deployments"
+                      >
+                        <BookmarkPlus size={13} />
+                        <span>{trackingLoading ? 'Linking...' : 'Track in Deployments'}</span>
+                      </button>
+                    )}
+
+                    {/* Git Pull & Rebase Button */}
+                    <button
+                      onClick={handleProcessGitPull}
+                      disabled={gitPullLoading}
+                      className="px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 text-xs font-medium flex items-center gap-1.5 transition-colors shadow-2xs"
+                      title="Pull latest code from remote and reload process"
+                    >
+                      <ArrowDownToLine
+                        size={13}
+                        className={gitPullLoading ? 'animate-bounce text-sky-500' : 'text-sky-500'}
+                      />
+                      <span>{gitPullLoading ? 'Pulling...' : 'Pull & Rebase'}</span>
+                    </button>
+
+                    {/* Rollback Button */}
+                    <button
+                      onClick={handleOpenRollbackModal}
+                      className="px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-amber-100 dark:hover:bg-amber-950/40 text-zinc-800 dark:text-zinc-200 hover:text-amber-600 dark:hover:text-amber-400 border border-zinc-200 dark:border-zinc-700 text-xs font-medium flex items-center gap-1.5 transition-colors shadow-2xs"
+                      title="Rollback process to a previous git commit"
+                    >
+                      <RotateCcw size={13} className="text-amber-500" />
+                      <span>Rollback...</span>
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-zinc-400 font-mono">
+                    No Git repository detected
+                  </span>
+                )}
+              </div>
             </div>
+
+            {/* Git Feedback Alert */}
+            {gitFeedback && (
+              <div
+                className={`p-2.5 rounded-lg text-xs flex items-center justify-between border ${
+                  gitFeedback.type === 'success'
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300'
+                }`}
+              >
+                <span>{gitFeedback.text}</span>
+                <button
+                  onClick={() => setGitFeedback(null)}
+                  className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 ml-2"
+                >
+                  &times;
+                </button>
+              </div>
+            )}
 
             {processInfo?.git ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -1046,6 +1227,121 @@ export const ProcessDetailPage: React.FC<ProcessDetailPageProps> = ({ processNam
                 </div>
               </div>
             )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Git Rollback Modal */}
+      {rollbackModalOpen && (
+        <Modal
+          isOpen={true}
+          onClose={() => setRollbackModalOpen(false)}
+          title={`Rollback "${processName}" to a Commit`}
+        >
+          <div className="space-y-4 text-xs">
+            <p className="text-zinc-600 dark:text-zinc-400">
+              Select a previous commit from Git history to hard-reset the process working directory and restart it.
+            </p>
+
+            {commitsLoading ? (
+              <div className="p-8 text-center text-zinc-400 flex flex-col items-center gap-2">
+                <RotateCw size={18} className="animate-spin" />
+                <span>Fetching commit history...</span>
+              </div>
+            ) : commitsList.length === 0 ? (
+              <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-500 text-center">
+                No commit history found via git log.
+              </div>
+            ) : (
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-1 divide-y divide-zinc-100 dark:divide-zinc-800/60 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 bg-zinc-50/50 dark:bg-zinc-950/40">
+                {commitsList.map((c, index) => {
+                  const isCurrent = index === 0;
+                  const isSelected = selectedCommitHash === c.hash;
+                  return (
+                    <div
+                      key={c.hash}
+                      onClick={() => {
+                        setSelectedCommitHash(c.hash);
+                        setCustomCommitHash('');
+                      }}
+                      className={`pt-2 first:pt-0 pb-2 cursor-pointer flex items-start gap-2.5 transition-colors rounded px-2 ${
+                        isSelected
+                          ? 'bg-amber-500/15 border-amber-500/30'
+                          : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/40'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="selectedCommit"
+                        checked={isSelected}
+                        onChange={() => {
+                          setSelectedCommitHash(c.hash);
+                          setCustomCommitHash('');
+                        }}
+                        className="mt-1 text-amber-500 focus:ring-amber-400"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100 bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-[11px]">
+                            {c.shortHash}
+                          </span>
+                          {isCurrent && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/20 text-sky-600 dark:text-sky-300">
+                              Current HEAD
+                            </span>
+                          )}
+                          <span className="text-zinc-400 text-[10px]">
+                            {new Date(c.date).toLocaleString([], {
+                              dateStyle: 'short',
+                              timeStyle: 'short',
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-zinc-800 dark:text-zinc-200 font-medium truncate mt-1">
+                          {c.message}
+                        </p>
+                        <span className="text-[10px] text-zinc-400">By {c.author}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Custom Commit Input */}
+            <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
+              <label className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 block">
+                Or specify target commit hash / tag manually:
+              </label>
+              <input
+                type="text"
+                value={customCommitHash}
+                onChange={(e) => {
+                  setCustomCommitHash(e.target.value);
+                  setSelectedCommitHash('');
+                }}
+                placeholder="e.g. 9f4a12c or full 40-char SHA"
+                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+              <button
+                onClick={() => setRollbackModalOpen(false)}
+                disabled={rollbackLoading}
+                className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExecuteRollback}
+                disabled={rollbackLoading || (!selectedCommitHash && !customCommitHash.trim())}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                {rollbackLoading ? <RotateCw size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                Confirm Rollback
+              </button>
+            </div>
           </div>
         </Modal>
       )}

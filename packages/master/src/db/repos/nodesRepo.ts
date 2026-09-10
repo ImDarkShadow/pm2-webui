@@ -225,7 +225,10 @@ export const createNodesRepo = (deps: NodesRepoDeps): NodesRepo => {
 
   const deleteNode = (id: string): Result<void> => {
     try {
-      deleteNodeStmt.run(id);
+      db.transaction(() => {
+        deleteGroupsForNodeStmt.run(id);
+        deleteNodeStmt.run(id);
+      })();
       return ok(undefined);
     } catch (error) {
       return err(createAppError('INTERNAL_ERROR', 'Failed to delete node', undefined, error));

@@ -81,4 +81,53 @@ describe('DeployEngine', () => {
     const linkTarget = fs.readlinkSync(currentSymlink);
     expect(linkTarget).toBe(rel1);
   });
+
+  it('retrieves commit history and executes git rollback on local repository', async () => {
+    const { getProcessCommitHistory, executeProcessGitRollback } = await import(
+      './pm2/gitOps.js'
+    );
+    const { execSync } = await import('node:child_process');
+
+    const gitDir = path.join(tmpDir, 'git-repo');
+    fs.mkdirSync(gitDir, { recursive: true });
+
+    // Initialize real git repo
+    execSync('git init -b main', { cwd: gitDir });
+    execSync('git config user.name "Tester"', { cwd: gitDir });
+    execSync('git config user.email "test@example.com"', { cwd: gitDir });
+
+    // Commit 1
+    fs.writeFileSync(path.join(gitDir, 'file1.txt'), 'hello');
+    execSync('git add . && git commit -m "First commit"', { cwd: gitDir });
+    const c1Hash = execSync('git rev-parse HEAD', { cwd: gitDir, encoding: 'utf8' }).trim();
+
+    // Commit 2
+    fs.writeFileSync(path.join(gitDir, 'file2.txt'), 'world');
+    execSync('git add . && git commit -m "Second commit"', { cwd: gitDir });
+    const c2Hash = execSync('git rev-parse HEAD', { cwd: gitDir, encoding: 'utf8' }).trim();
+
+    // Verify commit history retrieval
+    const historyRes = await getProcessCommitHistory(gitDir, 10);
+    expect(historyRes.ok).toBe(true);
+    if (historyRes.ok) {
+      expect(historyRes.value.length).toBe(2);
+      expect(historyRes.value[0]?.hash).toBe(c2Hash);
+      expect(historyRes.value[0]?.message).toBe('Second commit');
+      expect(historyRes.value[1]?.hash).toBe(c1Hash);
+      expect(historyRes.value[1]?.message).toBe('First commit');
+    }
+
+    // Verify rollback
+    const rollbackRes = await executeProcessGitRollback(gitDir, c1Hash);
+    expect(rollbackRes.ok).toBe(true);
+    const headAfterRollback = execSync('git rev-parse HEAD', {
+      cwd: gitDir,
+      encoding: 'utf8',
+    }).trim();
+    expect(headAfterRollback).toBe(c1Hash);
+
+    // Verify injection protection
+    const injectionRes = await executeProcessGitRollback(gitDir, 'invalid-hash; rm -rf /');
+    expect(injectionRes.ok).toBe(false);
+  });
 });

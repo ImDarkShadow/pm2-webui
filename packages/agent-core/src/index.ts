@@ -6,6 +6,7 @@ import { createAgentCore, AgentCore } from './createAgentCore.js';
 export * from './config/index.js';
 export * from './db/index.js';
 export * from './pm2/index.js';
+export * from './pm2/gitOps.js';
 export * from './pm2/listener.js';
 export * from './metrics/index.js';
 export * from './logging/index.js';

@@ -36,6 +36,7 @@ import {
   ErrorTraceQuerySchema,
 } from '@pm2-webui/shared';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import {
   AuthService,
   JwtUserPayload,
@@ -54,7 +55,12 @@ import { GitAppsRepo } from '../db/repos/gitAppsRepo.js';
 import { DeploymentsRepo } from '../db/repos/deploymentsRepo.js';
 import { NotificationEngine } from '../notifications/index.js';
 import { formatPrometheusMetrics } from '../metrics/prometheus.js';
-import { AgentCore } from '@pm2-webui/agent-core';
+import {
+  AgentCore,
+  getProcessCommitHistory,
+  executeProcessGitPull,
+  executeProcessGitRollback,
+} from '@pm2-webui/agent-core';
 
 export interface ApiRoutesDeps {
   readonly authService: AuthService;
@@ -639,6 +645,7 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
     const annotated = nodesRes.value.map((n) => ({
       ...n,
       isOnline: n.id === localAgentCore.agentId || relayProxy.isAgentConnected(n.id),
+      isMaster: n.id === localAgentCore.agentId,
     }));
 
     return reply.send(annotated);
@@ -657,6 +664,7 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
     return reply.send({
       ...nodeRes.value,
       isOnline: nodeId === localAgentCore.agentId || relayProxy.isAgentConnected(nodeId),
+      isMaster: nodeId === localAgentCore.agentId,
     });
   });
 
@@ -696,6 +704,34 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
       return reply
         .status(500)
         .send({ code: rejectRes.error.code, message: rejectRes.error.message });
+    }
+
+    return reply.send({ success: true });
+  });
+
+  fastify.delete('/api/v1/nodes/:nodeId', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    if (!isAuthorized(user, 'node:approve')) {
+      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Admin permission required' });
+    }
+
+    const { nodeId } = req.params as { nodeId: string };
+    if (localAgentCore && nodeId === localAgentCore.agentId) {
+      return reply
+        .status(400)
+        .send({ code: 'INVALID_OPERATION', message: 'Cannot delete the local Master node' });
+    }
+
+    // Terminate live relay socket if open
+    relayProxy.removeAgentSocket(nodeId);
+
+    const deleteRes = nodeRegistry.deleteNode(nodeId, user.sub, req.ip);
+    if (!deleteRes.ok) {
+      return reply
+        .status(500)
+        .send({ code: deleteRes.error.code, message: deleteRes.error.message });
     }
 
     return reply.send({ success: true });
@@ -1205,6 +1241,275 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
     });
 
     return reply.send({ key, value: value || '' });
+  });
+
+  // 3.4 Process Git Integration & Deployment Endpoints
+  fastify.get('/api/v1/nodes/:nodeId/processes/:processName/git/commits', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    if (!isAuthorized(user, 'process:view', `node:${(req.params as any).nodeId}`)) {
+      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Permission to view process required' });
+    }
+
+    const { nodeId, processName } = req.params as { nodeId: string; processName: string };
+    const limit = Math.min(Math.max(1, Number((req.query as any)?.limit || 15)), 50);
+
+    if (nodeId === localAgentCore.agentId) {
+      const describeRes = await localAgentCore.pm2Manager.describeProcess(processName);
+      if (!describeRes.ok || !describeRes.value || !describeRes.value.cwd) {
+        return reply
+          .status(404)
+          .send({ code: 'NOT_FOUND', message: `Process "${processName}" or cwd not found` });
+      }
+      const commitsRes = await getProcessCommitHistory(describeRes.value.cwd, limit);
+      if (!commitsRes.ok) {
+        return reply
+          .status(500)
+          .send({ code: commitsRes.error.code, message: commitsRes.error.message });
+      }
+      return reply.send({ commits: commitsRes.value });
+    }
+
+    const tunnelRes = await relayProxy.executeTunnelRequest(
+      nodeId,
+      `/processes/${encodeURIComponent(processName)}/git/commits`,
+      'GET',
+      { limit },
+    );
+
+    if (!tunnelRes.ok) {
+      return reply.status(500).send({ code: tunnelRes.error.code, message: tunnelRes.error.message });
+    }
+
+    if (tunnelRes.value?.error) {
+      return reply.status(500).send({ code: 'GIT_ERROR', message: tunnelRes.value.error });
+    }
+
+    const commits = Array.isArray(tunnelRes.value) ? tunnelRes.value : (tunnelRes.value?.commits || []);
+    return reply.send({ commits });
+  });
+
+  fastify.post('/api/v1/nodes/:nodeId/processes/:processName/git/pull', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    if (!isAuthorized(user, 'process:manage', `node:${(req.params as any).nodeId}`)) {
+      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Permission to manage processes required' });
+    }
+
+    const { nodeId, processName } = req.params as { nodeId: string; processName: string };
+    const { rebase = true } = (req.body as any) || {};
+
+    let result: any;
+    if (nodeId === localAgentCore.agentId) {
+      const describeRes = await localAgentCore.pm2Manager.describeProcess(processName);
+      if (!describeRes.ok || !describeRes.value || !describeRes.value.cwd) {
+        return reply
+          .status(404)
+          .send({ code: 'NOT_FOUND', message: `Process "${processName}" or cwd not found` });
+      }
+      const pullRes = await executeProcessGitPull(describeRes.value.cwd, rebase);
+      if (!pullRes.ok) {
+        return reply.status(500).send({ code: pullRes.error.code, message: pullRes.error.message });
+      }
+      await localAgentCore.pm2Manager.executeAction(
+        { action: 'restart', target: describeRes.value.pmId },
+        'high',
+      );
+      result = { success: true, ...pullRes.value };
+    } else {
+      const tunnelRes = await relayProxy.executeTunnelRequest(
+        nodeId,
+        `/processes/${encodeURIComponent(processName)}/git/pull`,
+        'POST',
+        { rebase },
+      );
+      if (!tunnelRes.ok) {
+        return reply.status(500).send({ code: tunnelRes.error.code, message: tunnelRes.error.message });
+      }
+      if (tunnelRes.value?.error) {
+        return reply.status(500).send({ code: 'GIT_ERROR', message: tunnelRes.value.error });
+      }
+      result = tunnelRes.value;
+    }
+
+    auditRepo.insert({
+      userId: user.sub,
+      username: user.username,
+      nodeId,
+      processName,
+      action: 'process:git_pull',
+      status: 'success',
+      ipAddress: req.ip,
+      detailsJson: JSON.stringify({ rebase }),
+    });
+
+    return reply.send(result);
+  });
+
+  fastify.post('/api/v1/nodes/:nodeId/processes/:processName/git/rollback', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    if (!isAuthorized(user, 'process:manage', `node:${(req.params as any).nodeId}`)) {
+      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Permission to manage processes required' });
+    }
+
+    const { nodeId, processName } = req.params as { nodeId: string; processName: string };
+    const { commitHash } = (req.body as any) || {};
+
+    if (!commitHash || typeof commitHash !== 'string') {
+      return reply.status(400).send({ code: 'VALIDATION_ERROR', message: 'Commit hash is required' });
+    }
+
+    let result: any;
+    if (nodeId === localAgentCore.agentId) {
+      const describeRes = await localAgentCore.pm2Manager.describeProcess(processName);
+      if (!describeRes.ok || !describeRes.value || !describeRes.value.cwd) {
+        return reply
+          .status(404)
+          .send({ code: 'NOT_FOUND', message: `Process "${processName}" or cwd not found` });
+      }
+      const rollbackRes = await executeProcessGitRollback(describeRes.value.cwd, commitHash);
+      if (!rollbackRes.ok) {
+        return reply
+          .status(500)
+          .send({ code: rollbackRes.error.code, message: rollbackRes.error.message });
+      }
+      await localAgentCore.pm2Manager.executeAction(
+        { action: 'restart', target: describeRes.value.pmId },
+        'high',
+      );
+      result = { success: true, ...rollbackRes.value };
+    } else {
+      const tunnelRes = await relayProxy.executeTunnelRequest(
+        nodeId,
+        `/processes/${encodeURIComponent(processName)}/git/rollback`,
+        'POST',
+        { commitHash },
+      );
+      if (!tunnelRes.ok) {
+        return reply.status(500).send({ code: tunnelRes.error.code, message: tunnelRes.error.message });
+      }
+      if (tunnelRes.value?.error) {
+        return reply.status(500).send({ code: 'GIT_ERROR', message: tunnelRes.value.error });
+      }
+      result = tunnelRes.value;
+    }
+
+    auditRepo.insert({
+      userId: user.sub,
+      username: user.username,
+      nodeId,
+      processName,
+      action: 'process:git_rollback',
+      status: 'success',
+      ipAddress: req.ip,
+      detailsJson: JSON.stringify({ commitHash }),
+    });
+
+    return reply.send(result);
+  });
+
+  fastify.get('/api/v1/nodes/:nodeId/processes/:processName/git/status', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    const { nodeId, processName } = req.params as { nodeId: string; processName: string };
+    const appRes = gitAppsRepo.findByName(processName);
+    const gitApp =
+      appRes.ok && appRes.value && appRes.value.nodeId === nodeId ? appRes.value : null;
+
+    return reply.send({
+      isTracked: Boolean(gitApp),
+      gitApp,
+    });
+  });
+
+  fastify.post('/api/v1/nodes/:nodeId/processes/:processName/git/track', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    if (!isAuthorized(user, 'deploy:create')) {
+      return reply
+        .status(403)
+        .send({ code: 'FORBIDDEN', message: 'Permission to configure deployments required' });
+    }
+
+    const { nodeId, processName } = req.params as { nodeId: string; processName: string };
+
+    const existing = gitAppsRepo.findByName(processName);
+    if (existing.ok && existing.value) {
+      return reply.send({
+        success: true,
+        alreadyTracked: true,
+        app: existing.value,
+      });
+    }
+
+    let proc: any = null;
+    if (nodeId === localAgentCore.agentId) {
+      const describeRes = await localAgentCore.pm2Manager.describeProcess(processName);
+      if (describeRes.ok) proc = describeRes.value;
+    } else {
+      const tunnelRes = await relayProxy.executeTunnelRequest(nodeId, '/processes', 'GET');
+      if (tunnelRes.ok && Array.isArray(tunnelRes.value)) {
+        proc = tunnelRes.value.find(
+          (p: any) => p.name === processName || String(p.pmId) === processName,
+        );
+      }
+    }
+
+    if (!proc) {
+      return reply
+        .status(404)
+        .send({ code: 'NOT_FOUND', message: `Process "${processName}" not found on node` });
+    }
+
+    const git = proc.git || {};
+    const repoUrl = git.remoteUrl || proc.cwd || `local://${processName}`;
+    const branch = git.branch || 'main';
+    const cwd = proc.cwd || process.cwd();
+    const scriptPath = proc.scriptPath ? path.relative(cwd, proc.scriptPath) : 'index.js';
+
+    const createRes = gitAppsRepo.create({
+      name: processName,
+      nodeId,
+      repoUrl,
+      branch,
+      commitHash: git.commitHash,
+      commitMessage: git.commitMessage,
+      commitAuthor: git.commitAuthor,
+      deployPath: cwd,
+      startScript: scriptPath || 'index.js',
+      execMode: proc.execMode || 'fork_mode',
+      instances: proc.instances || 1,
+      autoDeploy: false,
+    });
+
+    if (!createRes.ok) {
+      return reply
+        .status(500)
+        .send({ code: createRes.error.code, message: createRes.error.message });
+    }
+
+    auditRepo.insert({
+      userId: user.sub,
+      username: user.username,
+      nodeId,
+      processName,
+      action: 'deploy:track_process',
+      status: 'success',
+      ipAddress: req.ip,
+      detailsJson: JSON.stringify(createRes.value),
+    });
+
+    return reply.status(201).send({
+      success: true,
+      alreadyTracked: false,
+      app: createRes.value,
+    });
   });
 
   // 4. Progressive Log Endpoints

@@ -292,4 +292,105 @@ describe('Master REST API & Server Integration', () => {
     });
     expect(res.statusCode).toBe(401);
   });
+
+  it('supports deleting worker nodes while preventing deletion of local master node', async () => {
+    // 1. Admin login
+    const loginRes = await server.fastify.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'admin',
+        password: 'adminpassword123',
+      },
+    });
+    const token = JSON.parse(loginRes.body).accessToken;
+
+    // 2. Prevent deleting master node
+    const deleteMasterRes = await server.fastify.inject({
+      method: 'DELETE',
+      url: `/api/v1/nodes/${localAgentCore.agentId}`,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(deleteMasterRes.statusCode).toBe(400);
+    expect(JSON.parse(deleteMasterRes.body).message).toContain('Cannot delete the local Master node');
+
+    // 3. Register a dummy worker node to delete
+    const workerNodeId = 'worker-node-delete-test';
+    const nodesRepo = (masterDb as any).db;
+    nodesRepo
+      .prepare(
+        'INSERT INTO nodes (id, hostname, ip_address, port, public_key, connectivity_mode, status, version, enrolled_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        workerNodeId,
+        'worker-1.internal',
+        '10.0.0.5',
+        3006,
+        'dummy-pubkey',
+        'relay',
+        'offline',
+        '1.0.0',
+        Date.now(),
+        Date.now(),
+      );
+
+    // Verify worker exists
+    const getWorkerRes = await server.fastify.inject({
+      method: 'GET',
+      url: `/api/v1/nodes/${workerNodeId}`,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(getWorkerRes.statusCode).toBe(200);
+
+    // 4. Delete the worker node
+    const deleteWorkerRes = await server.fastify.inject({
+      method: 'DELETE',
+      url: `/api/v1/nodes/${workerNodeId}`,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(deleteWorkerRes.statusCode).toBe(200);
+    expect(JSON.parse(deleteWorkerRes.body).success).toBe(true);
+
+    // Verify node is deleted
+    const verifyDeletedRes = await server.fastify.inject({
+      method: 'GET',
+      url: `/api/v1/nodes/${workerNodeId}`,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(verifyDeletedRes.statusCode).toBe(404);
+  });
+
+  it('supports querying process git deployment status', async () => {
+    // 1. Admin login
+    const loginRes = await server.fastify.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'admin',
+        password: 'adminpassword123',
+      },
+    });
+    const token = JSON.parse(loginRes.body).accessToken;
+
+    // 2. Query git status for untracked process
+    const statusRes = await server.fastify.inject({
+      method: 'GET',
+      url: `/api/v1/nodes/${localAgentCore.agentId}/processes/untracked-proc/git/status`,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    expect(statusRes.statusCode).toBe(200);
+    const body = JSON.parse(statusRes.body);
+    expect(body.isTracked).toBe(false);
+    expect(body.gitApp).toBeNull();
+  });
 });

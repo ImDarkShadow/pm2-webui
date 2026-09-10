@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Server, Check, X, RefreshCw, Plus, Terminal, Copy } from 'lucide-react';
+import { Server, Check, X, RefreshCw, Plus, Terminal, Copy, Trash2 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useNodeStore } from '../store/nodeStore.js';
 import { StatusBadge } from '../components/ui/StatusBadge.js';
@@ -10,6 +10,8 @@ export const NodesPage: React.FC = () => {
   const { nodes, setNodes, setSelectedNodeId } = useNodeStore();
   const [loading, setLoading] = useState(false);
   const [selectedPendingNode, setSelectedPendingNode] = useState<any | null>(null);
+  const [nodeToDelete, setNodeToDelete] = useState<any | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [copiedQuickCmd, setCopiedQuickCmd] = useState(false);
@@ -53,6 +55,21 @@ export const NodesPage: React.FC = () => {
       await loadNodes();
     } catch (err: any) {
       setFeedback(`Failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteNode = async () => {
+    if (!nodeToDelete) return;
+    setDeleteLoading(true);
+    try {
+      await api.deleteNode(nodeToDelete.id);
+      setFeedback(`Node "${nodeToDelete.hostname}" removed from cluster`);
+      setNodeToDelete(null);
+      await loadNodes();
+    } catch (err: any) {
+      setFeedback(`Failed to delete node: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -209,21 +226,33 @@ export const NodesPage: React.FC = () => {
                     {new Date(node.lastSeenAt || Date.now()).toLocaleTimeString()}
                   </td>
                   <td className="py-3 px-4 text-right">
-                    {node.status === 'pending' ? (
-                      <button
-                        onClick={() => setSelectedPendingNode(node)}
-                        className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-xs font-medium transition-colors"
-                      >
-                        Review Request
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setSelectedNodeId(node.id)}
-                        className="px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-medium transition-colors border border-zinc-200 dark:border-zinc-700"
-                      >
-                        Select Node
-                      </button>
-                    )}
+                    <div className="flex items-center justify-end gap-1.5">
+                      {node.status === 'pending' ? (
+                        <button
+                          onClick={() => setSelectedPendingNode(node)}
+                          className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-xs font-medium transition-colors"
+                        >
+                          Review Request
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setSelectedNodeId(node.id)}
+                          className="px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-medium transition-colors border border-zinc-200 dark:border-zinc-700"
+                        >
+                          Select Node
+                        </button>
+                      )}
+
+                      {!node.isMaster && (
+                        <button
+                          onClick={() => setNodeToDelete(node)}
+                          className="p-1 rounded text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-transparent hover:border-rose-200 dark:hover:border-rose-800/40 transition-colors"
+                          title="Delete / Decommission Node"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -282,6 +311,47 @@ export const NodesPage: React.FC = () => {
                 className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
               >
                 <Check size={13} /> Approve Enrollment
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Node Modal */}
+      {nodeToDelete && (
+        <Modal
+          isOpen={true}
+          onClose={() => setNodeToDelete(null)}
+          title="Decommission & Delete Node"
+        >
+          <div className="space-y-4 text-xs">
+            <p className="text-zinc-600 dark:text-zinc-400">
+              Are you sure you want to delete worker node{' '}
+              <strong className="text-zinc-900 dark:text-zinc-100">{nodeToDelete.hostname}</strong>{' '}
+              (<span className="font-mono">{nodeToDelete.id.slice(0, 8)}</span>)?
+            </p>
+            <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-700 dark:text-rose-300 space-y-1">
+              <p className="font-semibold">Warning:</p>
+              <p>
+                This will remove the node from the cluster registry and disconnect any active relay connection.
+                You can re-enroll this node later using the worker installation command.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+              <button
+                onClick={() => setNodeToDelete(null)}
+                disabled={deleteLoading}
+                className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteNode}
+                disabled={deleteLoading}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                {deleteLoading ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                Delete Node
               </button>
             </div>
           </div>

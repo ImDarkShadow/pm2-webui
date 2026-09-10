@@ -56,6 +56,7 @@ export interface NodeRegistry {
     reason: string,
     ipAddress: string,
   ) => Result<void>;
+  readonly deleteNode: (nodeId: string, adminUserId: string, ipAddress: string) => Result<void>;
   readonly handleNodeDisconnect: (nodeId: string) => Result<void>;
   readonly recordHeartbeat: (nodeId: string) => Result<void>;
   readonly listNodes: (filters?: {
@@ -291,6 +292,26 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
     return ok(undefined);
   };
 
+  const deleteNode = (
+    nodeId: string,
+    adminUserId: string,
+    ipAddress: string,
+  ): Result<void> => {
+    const deleteRes = nodesRepo.deleteNode(nodeId);
+    if (!deleteRes.ok) return deleteRes;
+
+    auditRepo.insert({
+      userId: adminUserId,
+      nodeId,
+      action: 'node:delete',
+      status: 'success',
+      ipAddress,
+      detailsJson: JSON.stringify({ nodeId }),
+    });
+
+    return ok(undefined);
+  };
+
   const handleNodeDisconnect = (nodeId: string): Result<void> => {
     const nodeRes = nodesRepo.findById(nodeId);
     if (nodeRes.ok && nodeRes.value && nodeRes.value.status === 'online') {
@@ -320,6 +341,7 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
     approveNode,
     rejectNode,
     revokeNode,
+    deleteNode,
     handleNodeDisconnect,
     recordHeartbeat,
     listNodes,

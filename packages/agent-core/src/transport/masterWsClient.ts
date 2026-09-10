@@ -21,6 +21,11 @@ import { MetricsCollector } from '../metrics/index.js';
 import { AgentMetricsRepo } from '../db/repos/agentMetricsRepo.js';
 import { AgentErrorTraceRepo } from '../db/repos/agentErrorTraceRepo.js';
 import { AgentCrashRepo } from '../db/repos/agentCrashRepo.js';
+import {
+  getProcessCommitHistory,
+  executeProcessGitPull,
+  executeProcessGitRollback,
+} from '../pm2/gitOps.js';
 
 export interface MasterWsClientDeps {
   readonly masterWsUrl: string;
@@ -245,6 +250,143 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
               payload: {
                 tunnelId: openPayload.tunnelId,
                 chunk: JSON.stringify(history),
+                isFinal: true,
+              },
+              timestamp: Date.now(),
+            });
+          } else if (openPayload.path.includes('/processes/') && openPayload.path.includes('/git/commits')) {
+            const match = openPayload.path.match(/\/processes\/([^/]+)\/git\/commits/);
+            const procName = match && match[1] ? decodeURIComponent(match[1]) : '';
+            const listRes = await pm2Manager.listProcesses('high');
+            const proc = listRes.ok
+              ? listRes.value.find((p) => p.name === procName || String(p.pmId) === procName)
+              : null;
+            if (!proc || !proc.cwd) {
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify({ error: `Process "${procName}" or working directory not found` }),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+              break;
+            }
+            const limit = openPayload.body?.limit || 20;
+            const commitsRes = await getProcessCommitHistory(proc.cwd, limit);
+            send({
+              id: msg.id,
+              type: WSMessageType.RELAY_TUNNEL_DATA,
+              payload: {
+                tunnelId: openPayload.tunnelId,
+                chunk: JSON.stringify(commitsRes.ok ? commitsRes.value : { error: commitsRes.error.message }),
+                isFinal: true,
+              },
+              timestamp: Date.now(),
+            });
+          } else if (openPayload.path.includes('/processes/') && openPayload.path.includes('/git/pull')) {
+            const match = openPayload.path.match(/\/processes\/([^/]+)\/git\/pull/);
+            const procName = match && match[1] ? decodeURIComponent(match[1]) : '';
+            const listRes = await pm2Manager.listProcesses('high');
+            const proc = listRes.ok
+              ? listRes.value.find((p) => p.name === procName || String(p.pmId) === procName)
+              : null;
+            if (!proc || !proc.cwd) {
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify({ error: `Process "${procName}" or working directory not found` }),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+              break;
+            }
+            const rebase = openPayload.body?.rebase !== false;
+            const pullRes = await executeProcessGitPull(proc.cwd, rebase);
+            if (!pullRes.ok) {
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify({ error: pullRes.error.message }),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+              break;
+            }
+            await pm2Manager.executeAction({ action: 'restart', target: proc.pmId }, 'high');
+            send({
+              id: msg.id,
+              type: WSMessageType.RELAY_TUNNEL_DATA,
+              payload: {
+                tunnelId: openPayload.tunnelId,
+                chunk: JSON.stringify({ success: true, ...pullRes.value }),
+                isFinal: true,
+              },
+              timestamp: Date.now(),
+            });
+          } else if (openPayload.path.includes('/processes/') && openPayload.path.includes('/git/rollback')) {
+            const match = openPayload.path.match(/\/processes\/([^/]+)\/git\/rollback/);
+            const procName = match && match[1] ? decodeURIComponent(match[1]) : '';
+            const listRes = await pm2Manager.listProcesses('high');
+            const proc = listRes.ok
+              ? listRes.value.find((p) => p.name === procName || String(p.pmId) === procName)
+              : null;
+            if (!proc || !proc.cwd) {
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify({ error: `Process "${procName}" or working directory not found` }),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+              break;
+            }
+            const commitHash = openPayload.body?.commitHash;
+            if (!commitHash) {
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify({ error: 'Commit hash is required for rollback' }),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+              break;
+            }
+            const rollbackRes = await executeProcessGitRollback(proc.cwd, commitHash);
+            if (!rollbackRes.ok) {
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify({ error: rollbackRes.error.message }),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+              break;
+            }
+            await pm2Manager.executeAction({ action: 'restart', target: proc.pmId }, 'high');
+            send({
+              id: msg.id,
+              type: WSMessageType.RELAY_TUNNEL_DATA,
+              payload: {
+                tunnelId: openPayload.tunnelId,
+                chunk: JSON.stringify({ success: true, ...rollbackRes.value }),
                 isFinal: true,
               },
               timestamp: Date.now(),

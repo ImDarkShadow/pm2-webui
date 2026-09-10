@@ -246,6 +246,17 @@ class ApiClient {
     return res.json();
   }
 
+  public async deleteNode(nodeId: string) {
+    const res = await this.fetchWithAuth(`/api/v1/nodes/${nodeId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to delete node' }));
+      throw new Error(err.message || 'Failed to delete node');
+    }
+    return res.json();
+  }
+
   public async getNodeDelegationToken(nodeId: string) {
     const res = await this.fetchWithAuth(`/api/v1/nodes/${nodeId}/token`, { method: 'POST' });
     if (!res.ok) throw new Error('Failed to get delegation token');
@@ -323,6 +334,69 @@ class ApiClient {
       body: JSON.stringify({ key }),
     });
     if (!res.ok) throw new Error('Failed to reveal environment secret');
+    return res.json();
+  }
+
+  public async getProcessGitCommits(nodeId: string, processName: string, limit = 15) {
+    const res = await this.fetchWithAuth(
+      `/api/v1/nodes/${nodeId}/processes/${encodeURIComponent(processName)}/git/commits?limit=${limit}`,
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to fetch commits' }));
+      throw new Error(err.message || 'Failed to fetch commits');
+    }
+    return res.json();
+  }
+
+  public async processGitPull(nodeId: string, processName: string, rebase = true) {
+    const res = await this.fetchWithAuth(
+      `/api/v1/nodes/${nodeId}/processes/${encodeURIComponent(processName)}/git/pull`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ rebase }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Git pull failed' }));
+      throw new Error(err.message || 'Git pull failed');
+    }
+    return res.json();
+  }
+
+  public async processGitRollback(nodeId: string, processName: string, commitHash: string) {
+    const res = await this.fetchWithAuth(
+      `/api/v1/nodes/${nodeId}/processes/${encodeURIComponent(processName)}/git/rollback`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ commitHash }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Git rollback failed' }));
+      throw new Error(err.message || 'Git rollback failed');
+    }
+    return res.json();
+  }
+
+  public async getProcessGitStatus(nodeId: string, processName: string) {
+    const res = await this.fetchWithAuth(
+      `/api/v1/nodes/${nodeId}/processes/${encodeURIComponent(processName)}/git/status`,
+    );
+    if (!res.ok) throw new Error('Failed to fetch process git status');
+    return res.json();
+  }
+
+  public async trackProcessInDeployments(nodeId: string, processName: string) {
+    const res = await this.fetchWithAuth(
+      `/api/v1/nodes/${nodeId}/processes/${encodeURIComponent(processName)}/git/track`,
+      {
+        method: 'POST',
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to track process in deployments' }));
+      throw new Error(err.message || 'Failed to track process in deployments');
+    }
     return res.json();
   }
 

@@ -14,6 +14,8 @@ export interface NodeState {
   readonly enrolledAt: number;
   readonly lastSeenAt: number;
   readonly groupIds?: readonly string[];
+  readonly isMaster?: boolean;
+  readonly isOnline?: boolean;
 }
 
 export interface NodeGroup {
