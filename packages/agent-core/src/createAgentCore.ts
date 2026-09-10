@@ -1,20 +1,24 @@
-import crypto from 'node:crypto';
 import http from 'node:http';
-import { generateEd25519KeyPair, Result, ok } from '@pm2-webui/shared';
-import { AgentConfig, loadAgentConfig } from './config/index.js';
+import crypto from 'node:crypto';
+import { Result, ok, generateEd25519KeyPair, CrashEvent, ErrorTraceItem } from '@pm2-webui/shared';
+import { loadAgentConfig, AgentConfig } from './config/index.js';
 import {
   createAgentDatabase,
   createAgentMetaRepo,
   createAgentMetricsRepo,
   createAgentLogsRepo,
   createAgentCrashRepo,
+  createAgentErrorTraceRepo,
   createRetentionCleaner,
+  AgentMetricsRepo,
+  AgentCrashRepo,
+  AgentErrorTraceRepo,
 } from './db/index.js';
-import { AgentMetricsRepo } from './db/repos/agentMetricsRepo.js';
 import { createPm2Manager, Pm2Manager } from './pm2/index.js';
 import { createPm2Listener } from './pm2/listener.js';
-import { createMetricsCollector, MetricsCollector } from './metrics/index.js';
 import { createLogEngine, LogEngine } from './logging/index.js';
+import { createErrorTraceExtractor, ErrorTraceExtractor } from './logging/errorTraceExtractor.js';
+import { createMetricsCollector, MetricsCollector } from './metrics/index.js';
 import { createDeployEngine, DeployEngine } from './deploy/index.js';
 import { createMasterWsClient, MasterWsClient } from './transport/masterWsClient.js';
 import { createAgentWsServer, AgentWsServer } from './transport/agentWsServer.js';
@@ -22,6 +26,8 @@ import { createAgentWsServer, AgentWsServer } from './transport/agentWsServer.js
 export interface AgentCoreDeps {
   readonly config?: Partial<AgentConfig>;
   readonly httpServer?: http.Server;
+  readonly onProcessCrash?: (crash: CrashEvent) => void;
+  readonly onErrorTrace?: (trace: ErrorTraceItem) => void;
   readonly logger?: {
     readonly info: (msg: string, ...args: unknown[]) => void;
     readonly warn: (msg: string, ...args: unknown[]) => void;
@@ -37,6 +43,8 @@ export interface AgentCore {
   readonly deployEngine: DeployEngine;
   readonly metricsCollector: MetricsCollector;
   readonly metricsRepo: AgentMetricsRepo;
+  readonly crashRepo: AgentCrashRepo;
+  readonly errorTraceRepo: AgentErrorTraceRepo;
   readonly start: () => Promise<Result<void>>;
   readonly stop: () => void;
 }
@@ -57,6 +65,7 @@ export const createAgentCore = (deps: AgentCoreDeps = {}): AgentCore => {
   const metricsRepo = createAgentMetricsRepo({ db: agentDb.db });
   const logsRepo = createAgentLogsRepo({ db: agentDb.db });
   const crashRepo = createAgentCrashRepo({ db: agentDb.db });
+  const errorTraceRepo = createAgentErrorTraceRepo({ db: agentDb.db });
 
   // 3. Ensure Agent ID and Ed25519 KeyPair
   let agentId = config.agentId;
@@ -96,20 +105,35 @@ export const createAgentCore = (deps: AgentCoreDeps = {}): AgentCore => {
     });
   }
 
+  let masterWsClient: MasterWsClient | null = null;
+
+  const errorTraceExtractor = createErrorTraceExtractor({
+    errorTraceRepo,
+    onErrorTrace: (trace) => {
+      masterWsClient?.sendErrorTrace(trace);
+      deps.onErrorTrace?.(trace);
+    },
+    logger,
+  });
+
   const pm2Listener = createPm2Listener({
     onLogLine: (line) => {
       logEngine.ingestLogLine(line);
+      errorTraceExtractor.processLogLine(line, () =>
+        pm2Listener.getRecentLogsForProcess(line.processName, 10),
+      );
       wsServer?.broadcastLogLine(line);
     },
     onProcessCrash: (crash) => {
       logger?.warn(`PM2 Process crash detected: ${crash.processName} (PM_ID: ${crash.pmId})`);
       crashRepo.insert(crash);
+      masterWsClient?.sendCrashEvent(crash);
+      deps.onProcessCrash?.(crash);
     },
     logger,
   });
 
   // 5. Metrics Collector
-  let masterWsClient: MasterWsClient | null = null;
   const metricsCollector = createMetricsCollector({
     metricsRepo,
     pm2Manager,
@@ -134,6 +158,8 @@ export const createAgentCore = (deps: AgentCoreDeps = {}): AgentCore => {
       logEngine,
       metricsCollector,
       metricsRepo,
+      errorTraceRepo,
+      crashRepo,
       logger,
     });
   }
@@ -185,6 +211,7 @@ export const createAgentCore = (deps: AgentCoreDeps = {}): AgentCore => {
       stopCleanupSchedule();
       stopCleanupSchedule = null;
     }
+    errorTraceExtractor.flushPending();
     masterWsClient?.disconnect();
     metricsCollector.stop();
     logEngine.stop();
@@ -208,6 +235,8 @@ export const createAgentCore = (deps: AgentCoreDeps = {}): AgentCore => {
     deployEngine,
     metricsCollector,
     metricsRepo,
+    crashRepo,
+    errorTraceRepo,
     start,
     stop,
   };

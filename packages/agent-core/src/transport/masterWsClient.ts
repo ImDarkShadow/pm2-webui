@@ -10,6 +10,8 @@ import {
   ProcessActionRequest,
   signData,
   MetricFrame,
+  CrashEvent,
+  ErrorTraceItem,
   APP_VERSION,
 } from '@pm2-webui/shared';
 import { AgentMetaRepo } from '../db/repos/agentMetaRepo.js';
@@ -17,6 +19,8 @@ import { Pm2Manager } from '../pm2/index.js';
 import { LogEngine } from '../logging/index.js';
 import { MetricsCollector } from '../metrics/index.js';
 import { AgentMetricsRepo } from '../db/repos/agentMetricsRepo.js';
+import { AgentErrorTraceRepo } from '../db/repos/agentErrorTraceRepo.js';
+import { AgentCrashRepo } from '../db/repos/agentCrashRepo.js';
 
 export interface MasterWsClientDeps {
   readonly masterWsUrl: string;
@@ -30,6 +34,8 @@ export interface MasterWsClientDeps {
   readonly logEngine: LogEngine;
   readonly metricsCollector?: MetricsCollector;
   readonly metricsRepo?: AgentMetricsRepo;
+  readonly errorTraceRepo?: AgentErrorTraceRepo;
+  readonly crashRepo?: AgentCrashRepo;
   readonly onStatusChange?: (
     status: 'connected' | 'handshaking' | 'enrolled' | 'disconnected',
   ) => void;
@@ -44,6 +50,8 @@ export interface MasterWsClient {
   readonly connect: () => void;
   readonly disconnect: () => void;
   readonly sendMetrics: (frame: MetricFrame) => void;
+  readonly sendCrashEvent: (crash: CrashEvent) => void;
+  readonly sendErrorTrace: (trace: ErrorTraceItem) => void;
   readonly isConnected: () => boolean;
 }
 
@@ -60,14 +68,16 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
     logEngine,
     metricsCollector,
     metricsRepo,
+    errorTraceRepo,
+    crashRepo,
     onStatusChange,
     logger,
   } = deps;
 
   let ws: WebSocket | null = null;
-  let isClosedExplicitly = false;
-  let reconnectAttempts = 0;
   let heartbeatTimer: NodeJS.Timeout | null = null;
+  let reconnectAttempts = 0;
+  let isClosedExplicitly = false;
   let enrolled = false;
 
   const send = (msg: WSMessage) => {
@@ -76,28 +86,21 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
     }
   };
 
-  const handleMessage = async (raw: string) => {
+  const handleMessage = async (dataStr: string) => {
     try {
-      const msg = JSON.parse(raw) as WSMessage<any>;
+      const msg = JSON.parse(dataStr) as WSMessage<any>;
 
       switch (msg.type) {
         case WSMessageType.AGENT_HANDSHAKE_CHALLENGE: {
-          const payload = msg.payload as HandshakeChallengePayload;
-          logger?.info('Received handshake challenge from Master');
+          const challengePayload = msg.payload as HandshakeChallengePayload;
+          agentMetaRepo.saveMasterPublicKey(challengePayload.masterPublicKey);
 
-          // Save Master public key
-          agentMetaRepo.saveMasterPublicKey(payload.masterPublicKey);
-
-          // Sign challenge + timestamp with agent private key
           const keyPairRes = agentMetaRepo.getKeyPair();
-          if (!keyPairRes.ok || !keyPairRes.value) {
-            logger?.error('Cannot respond to challenge: missing Agent keypair');
-            return;
-          }
+          if (!keyPairRes.ok || !keyPairRes.value) return;
 
           const timestamp = Date.now();
-          const payloadToSign = `${payload.challenge}:${timestamp}`;
-          const sigRes = signData(payloadToSign, keyPairRes.value.privateKey);
+          const dataToSign = `${challengePayload.challenge}:${timestamp}`;
+          const sigRes = signData(dataToSign, keyPairRes.value.privateKey);
 
           if (sigRes.ok) {
             const respPayload: HandshakeResponsePayload = {
@@ -110,55 +113,45 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
               payload: respPayload,
               timestamp: Date.now(),
             });
+            onStatusChange?.('handshaking');
           }
           break;
         }
 
         case WSMessageType.AGENT_HANDSHAKE_ACK: {
-          const ack = msg.payload as HandshakeAckPayload;
-          logger?.info(`Handshake ACK received. Agent status on Master: ${ack.status}`);
-          enrolled = ack.status === 'online' || (ack.status as string) === 'pending_approval';
-          onStatusChange?.(enrolled ? 'enrolled' : 'connected');
+          const ackPayload = msg.payload as HandshakeAckPayload;
+          logger?.info(`Master handshake ACK received. Enrolled status: ${ackPayload.status}`);
+          if (ackPayload.status === 'online' || ackPayload.status === 'pending') {
+            enrolled = true;
+            onStatusChange?.('enrolled');
+          }
+          break;
+        }
 
-          // Start Heartbeat
-          if (heartbeatTimer) clearInterval(heartbeatTimer);
-          heartbeatTimer = setInterval(() => {
-            send({
-              id: Math.random().toString(36).substring(2, 9),
-              type: WSMessageType.HEARTBEAT_PING,
-              payload: { agentId, timestamp: Date.now() },
-              timestamp: Date.now(),
-            });
-          }, 10_000);
+        case WSMessageType.AGENT_HANDSHAKE_REJECT: {
+          logger?.warn('Agent handshake rejected by Master');
+          onStatusChange?.('disconnected');
+          disconnect();
           break;
         }
 
         case WSMessageType.HEARTBEAT_PONG: {
-          // Keepalive OK
           break;
         }
 
         case WSMessageType.PROCESS_ACTION_REQ: {
-          const req = msg.payload as ProcessActionRequest;
-          logger?.info(
-            `Received process action command from Master: ${req.action} on ${req.target}`,
-          );
-
-          const execRes = await pm2Manager.executeAction(req, 'high');
+          const actionReq = msg.payload as ProcessActionRequest;
+          const result = await pm2Manager.executeAction(actionReq);
           send({
             id: msg.id,
             type: WSMessageType.PROCESS_ACTION_RES,
-            payload: {
-              success: execRes.ok,
-              error: execRes.ok ? undefined : execRes.error.message,
-            },
+            payload: result,
             timestamp: Date.now(),
           });
           break;
         }
 
         case WSMessageType.RELAY_TUNNEL_OPEN: {
-          // Handle multiplexed relay tunnel for NAT'd node
           const openPayload = msg.payload as {
             tunnelId: string;
             path: string;
@@ -167,16 +160,91 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
           };
 
           if (openPayload.path.includes('/logs')) {
-            const linesRes = logEngine.queryRawLogs({
-              processName: openPayload.body?.processName || '',
-              limit: 100,
+            const queryRes = logEngine.queryRawLogs({
+              processName: openPayload.body?.processName || 'all',
+              stream: openPayload.body?.stream || 'both',
+              search: openPayload.body?.search,
+              limit: openPayload.body?.limit || 100,
             });
             send({
               id: msg.id,
               type: WSMessageType.RELAY_TUNNEL_DATA,
               payload: {
                 tunnelId: openPayload.tunnelId,
-                chunk: JSON.stringify(linesRes.ok ? linesRes.value : { lines: [] }),
+                chunk: JSON.stringify(queryRes.ok ? queryRes.value.lines : []),
+                isFinal: true,
+              },
+              timestamp: Date.now(),
+            });
+          } else if (openPayload.path.includes('/crashes')) {
+            const crashRes = crashRepo ? crashRepo.list(openPayload.body?.processName, openPayload.body?.limit || 50) : { ok: true, value: [] };
+            send({
+              id: msg.id,
+              type: WSMessageType.RELAY_TUNNEL_DATA,
+              payload: {
+                tunnelId: openPayload.tunnelId,
+                chunk: JSON.stringify(crashRes.ok ? crashRes.value : []),
+                isFinal: true,
+              },
+              timestamp: Date.now(),
+            });
+          } else if (openPayload.path.includes('/errors')) {
+            if (openPayload.method === 'POST' && openPayload.path.includes('/resolve')) {
+              const match = openPayload.path.match(/\/errors\/([^/]+)\/resolve/);
+              if (match && match[1] && errorTraceRepo) {
+                errorTraceRepo.resolve(decodeURIComponent(match[1]));
+              }
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify({ success: true }),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+            } else {
+              const filter = openPayload.body || {};
+              const tracesRes = errorTraceRepo ? errorTraceRepo.list(filter) : { ok: true, value: [] };
+              send({
+                id: msg.id,
+                type: WSMessageType.RELAY_TUNNEL_DATA,
+                payload: {
+                  tunnelId: openPayload.tunnelId,
+                  chunk: JSON.stringify(tracesRes.ok ? tracesRes.value : []),
+                  isFinal: true,
+                },
+                timestamp: Date.now(),
+              });
+            }
+          } else if (openPayload.path.includes('/processes/') && openPayload.path.includes('/metrics')) {
+            const match = openPayload.path.match(/\/processes\/([^/]+)\/metrics/);
+            const procName = match && match[1] ? decodeURIComponent(match[1]) : '';
+            const fromTs = openPayload.body?.from || Date.now() - 24 * 60 * 60 * 1000;
+            const toTs = openPayload.body?.to || Date.now();
+            const bucketMs = openPayload.body?.bucketMs;
+
+            let history: any[] = [];
+            if (metricsRepo && procName) {
+              const res = metricsRepo.queryProcessMetricsRange(procName, fromTs, toTs, bucketMs);
+              if (res.ok) history = [...res.value];
+            }
+
+            const recentProc = metricsCollector?.getRecentProcessSamples(procName) || [];
+            if (toTs >= Date.now() - 15 * 60 * 1000 && !bucketMs) {
+              const map = new Map<number, any>();
+              for (const item of history) map.set(item.timestamp, item);
+              for (const item of recentProc) map.set(item.timestamp, item);
+              history = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+            }
+
+            send({
+              id: msg.id,
+              type: WSMessageType.RELAY_TUNNEL_DATA,
+              payload: {
+                tunnelId: openPayload.tunnelId,
+                chunk: JSON.stringify(history),
                 isFinal: true,
               },
               timestamp: Date.now(),
@@ -205,10 +273,12 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
               const recent = metricsCollector.getRecentSamples();
               const fromTs = openPayload.body?.from || Date.now() - 24 * 60 * 60 * 1000;
               const toTs = openPayload.body?.to || Date.now();
+              const bucketMs = openPayload.body?.bucketMs;
+              const limit = openPayload.body?.limit || 1000;
 
               let dbHistory: readonly any[] = [];
               if (metricsRepo) {
-                const histRes = metricsRepo.queryRange(fromTs, toTs);
+                const histRes = metricsRepo.queryRange(fromTs, toTs, bucketMs);
                 if (histRes.ok) dbHistory = histRes.value;
               }
 
@@ -216,10 +286,17 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
               for (const item of dbHistory) {
                 map.set(item.timestamp, item);
               }
-              for (const item of recent) {
-                map.set(item.timestamp, item);
+              if (toTs >= Date.now() - 15 * 60 * 1000 && !bucketMs) {
+                for (const item of recent) {
+                  map.set(item.timestamp, item);
+                }
               }
               historyList = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+              // Only slice if not explicitly downsampled with bucketMs
+              if (!bucketMs && historyList.length > limit) {
+                historyList = historyList.slice(-limit);
+              }
             }
 
             send({
@@ -229,7 +306,7 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
                 tunnelId: openPayload.tunnelId,
                 chunk: JSON.stringify({
                   current: currentMetric,
-                  history: historyList.slice(-500),
+                  history: historyList,
                 }),
                 isFinal: true,
               },
@@ -244,13 +321,24 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
     }
   };
 
+  const startHeartbeat = () => {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = setInterval(() => {
+      send({
+        id: Math.random().toString(36).substring(2, 9),
+        type: WSMessageType.HEARTBEAT_PING,
+        payload: { timestamp: Date.now() },
+        timestamp: Date.now(),
+      });
+    }, 15000);
+  };
+
   const connect = () => {
-    isClosedExplicitly = false;
-    onStatusChange?.('handshaking');
+    if (isClosedExplicitly) return;
 
     try {
       const url = `${masterWsUrl.replace(/^http/, 'ws')}/api/v1/agent/connect`;
-      logger?.info(`Connecting to Master WS at ${url}`);
+      logger?.info(`Attempting connection to Master WS: ${url}`);
       ws = new WebSocket(url);
 
       ws.on('open', () => {
@@ -307,16 +395,22 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
           clearInterval(heartbeatTimer);
           heartbeatTimer = null;
         }
+
         if (!isClosedExplicitly) {
-          const delay = Math.min(30_000, 1000 * Math.pow(1.5, reconnectAttempts++));
-          logger?.warn(`Disconnected from Master. Reconnecting in ${Math.round(delay / 1000)}s...`);
+          reconnectAttempts++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+          logger?.warn(
+            `Disconnected from Master. Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`,
+          );
           setTimeout(connect, delay);
         }
       });
 
       ws.on('error', (err) => {
-        logger?.error('Master WebSocket error', err);
+        logger?.error('Master WebSocket client error', err);
       });
+
+      startHeartbeat();
     } catch (error) {
       logger?.error('Error creating WebSocket connection to Master', error);
     }
@@ -345,12 +439,32 @@ export const createMasterWsClient = (deps: MasterWsClientDeps): MasterWsClient =
     }
   };
 
+  const sendCrashEvent = (crash: CrashEvent) => {
+    send({
+      id: Math.random().toString(36).substring(2, 9),
+      type: WSMessageType.PROCESS_CRASH_EVENT,
+      payload: crash,
+      timestamp: Date.now(),
+    });
+  };
+
+  const sendErrorTrace = (trace: ErrorTraceItem) => {
+    send({
+      id: Math.random().toString(36).substring(2, 9),
+      type: WSMessageType.ERROR_TRACE_EVENT,
+      payload: trace,
+      timestamp: Date.now(),
+    });
+  };
+
   const isConnected = () => ws !== null && ws.readyState === WebSocket.OPEN;
 
   return {
     connect,
     disconnect,
     sendMetrics,
+    sendCrashEvent,
+    sendErrorTrace,
     isConnected,
   };
 };

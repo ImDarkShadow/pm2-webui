@@ -5,6 +5,7 @@ import {
   MetricFrame,
   HostMetrics,
   ProcessInfo,
+  ProcessMetricSample,
   Result,
   ok,
   err,
@@ -42,6 +43,7 @@ export interface MetricsCollectorDeps {
 export interface MetricsCollector {
   readonly collectCurrentMetrics: () => Promise<Result<MetricFrame>>;
   readonly getRecentSamples: () => readonly RecentMetricSample[];
+  readonly getRecentProcessSamples: (processName: string) => readonly ProcessMetricSample[];
   readonly start: () => void;
   readonly stop: () => void;
   readonly isRunning: () => boolean;
@@ -56,6 +58,7 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
 
   // In-memory rolling buffer of high-resolution metric samples (last 120 samples = 6 mins)
   const recentSamples: RecentMetricSample[] = [];
+  const recentProcessSamples = new Map<string, ProcessMetricSample[]>();
   const MAX_SAMPLES = 120;
 
   // Track previous network stats for rxSec/txSec calculation
@@ -223,7 +226,33 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
         recentSamples.shift();
       }
 
-      // Periodic hourly persistent write (every 60 seconds)
+      // Record per-process rolling samples
+      for (const p of processes) {
+        let list = recentProcessSamples.get(p.name);
+        if (!list) {
+          list = [];
+          recentProcessSamples.set(p.name, list);
+        }
+        list.push({
+          timestamp: hostMetrics.timestamp,
+          processName: p.name,
+          pmId: p.pmId,
+          cpu: p.monit?.cpu ?? p.cpu ?? 0,
+          memoryBytes: p.monit?.memory ?? p.memory ?? 0,
+          heapUsedMb: p.heapUsedMb,
+          heapTotalMb: p.heapTotalMb,
+          eventLoopDelayMs: p.eventLoopDelayMs,
+          rps: p.rps,
+          latencyMs: p.latencyMs,
+          restarts: p.restarts,
+          status: p.status,
+        });
+        if (list.length > MAX_SAMPLES) {
+          list.shift();
+        }
+      }
+
+      // Periodic hourly/minute persistent write (every 60 seconds)
       const currentMinute = Math.floor(hostMetrics.timestamp / (60 * 1000)) * (60 * 1000);
       if (currentMinute > lastHourlySave) {
         lastHourlySave = currentMinute;
@@ -231,6 +260,25 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
           ...sample,
           timestamp: currentMinute,
         });
+
+        // Persist per-process metrics
+        const procSamples: ProcessMetricSample[] = processes.map((p) => ({
+          processName: p.name,
+          timestamp: currentMinute,
+          pmId: p.pmId,
+          cpu: p.monit?.cpu ?? p.cpu ?? 0,
+          memoryBytes: p.monit?.memory ?? p.memory ?? 0,
+          heapUsedMb: p.heapUsedMb,
+          heapTotalMb: p.heapTotalMb,
+          eventLoopDelayMs: p.eventLoopDelayMs,
+          rps: p.rps,
+          latencyMs: p.latencyMs,
+          restarts: p.restarts,
+          status: p.status,
+        }));
+        if (procSamples.length > 0) {
+          metricsRepo.insertProcessMetrics(procSamples);
+        }
       }
 
       return ok(frame);
@@ -244,6 +292,11 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
 
   const getRecentSamples = (): readonly RecentMetricSample[] => {
     return [...recentSamples];
+  };
+
+  const getRecentProcessSamples = (processName: string): readonly ProcessMetricSample[] => {
+    const list = recentProcessSamples.get(processName) || [];
+    return [...list];
   };
 
   const start = (): void => {
@@ -279,6 +332,7 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
   return {
     collectCurrentMetrics,
     getRecentSamples,
+    getRecentProcessSamples,
     start,
     stop,
     isRunning,

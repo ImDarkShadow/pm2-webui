@@ -4,6 +4,8 @@ import {
   WSMessage,
   WSMessageType,
   MetricFrame,
+  CrashEvent,
+  ErrorTraceItem,
   Result,
   ok,
   err,
@@ -13,6 +15,8 @@ import { NodeRegistry } from '../registry/index.js';
 
 export interface RelayProxyDeps {
   readonly nodeRegistry: NodeRegistry;
+  readonly onCrashEvent?: (agentId: string, crash: CrashEvent) => void;
+  readonly onErrorTraceEvent?: (agentId: string, trace: ErrorTraceItem) => void;
   readonly logger?: {
     readonly info: (msg: string, ...args: unknown[]) => void;
     readonly warn: (msg: string, ...args: unknown[]) => void;
@@ -53,7 +57,7 @@ export interface RelayProxyEngine {
 }
 
 export const createRelayProxyEngine = (deps: RelayProxyDeps): RelayProxyEngine => {
-  const { nodeRegistry, logger } = deps;
+  const { nodeRegistry, onCrashEvent, onErrorTraceEvent, logger } = deps;
 
   const agentSockets = new Map<string, ActiveAgentConnection>();
   const pendingCommands = new Map<string, PendingCommand<any>>();
@@ -104,6 +108,18 @@ export const createRelayProxyEngine = (deps: RelayProxyDeps): RelayProxyEngine =
           const frame = msg.payload as MetricFrame;
           latestMetrics.set(agentId, frame);
           nodeRegistry.recordHeartbeat(agentId);
+          break;
+        }
+
+        case WSMessageType.PROCESS_CRASH_EVENT: {
+          const crash = msg.payload as CrashEvent;
+          onCrashEvent?.(agentId, crash);
+          break;
+        }
+
+        case WSMessageType.ERROR_TRACE_EVENT: {
+          const trace = msg.payload as ErrorTraceItem;
+          onErrorTraceEvent?.(agentId, trace);
           break;
         }
 

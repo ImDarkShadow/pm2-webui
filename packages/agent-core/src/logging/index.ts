@@ -240,3 +240,5 @@ export const createLogEngine = (deps: LogEngineDeps): LogEngine => {
     stop,
   };
 };
+
+export * from './errorTraceExtractor.js';

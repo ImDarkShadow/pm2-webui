@@ -203,6 +203,35 @@ export interface CrashEvent {
   readonly logsAfter: readonly LogLine[];
 }
 
+export interface ErrorTraceItem {
+  readonly id: string;
+  readonly processName: string;
+  readonly pmId: number;
+  readonly errorName: string;
+  readonly message: string;
+  readonly stackTrace: string;
+  readonly firstSeenAt: number;
+  readonly lastSeenAt: number;
+  readonly occurrenceCount: number;
+  readonly status: 'unresolved' | 'resolved' | 'ignored';
+  readonly contextLogs?: readonly LogLine[];
+}
+
+export interface ProcessMetricSample {
+  readonly timestamp: number;
+  readonly processName: string;
+  readonly pmId: number;
+  readonly cpu: number;
+  readonly memoryBytes: number;
+  readonly heapUsedMb?: number;
+  readonly heapTotalMb?: number;
+  readonly eventLoopDelayMs?: number;
+  readonly rps?: number;
+  readonly latencyMs?: number;
+  readonly restarts?: number;
+  readonly status: string;
+}
+
 // User, RBAC & Auth Types
 export type RoleName = 'admin' | 'operator' | 'viewer';
 

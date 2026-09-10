@@ -26,6 +26,7 @@ import {
 } from './security/index.js';
 import { createNodeRegistry } from './registry/index.js';
 import { createRelayProxyEngine } from './relay/index.js';
+import { createNotificationEngine } from './notifications/index.js';
 import { createMasterServer } from './server.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -107,7 +108,13 @@ export const startMasterNode = async () => {
     password: process.env.ADMIN_PASSWORD || 'adminpassword123',
   });
 
-  // 5. Node Registry & Relay Proxy
+  // 5. Notification Engine
+  const notificationEngine = createNotificationEngine({
+    settingsRepo,
+    logger: console,
+  });
+
+  // 6. Node Registry & Relay Proxy
   const nodeRegistry = createNodeRegistry({
     nodesRepo,
     auditRepo,
@@ -119,15 +126,35 @@ export const startMasterNode = async () => {
   const relayProxy = createRelayProxyEngine({
     nodeRegistry,
     logger: console,
+    onCrashEvent: (agentId, crash) => {
+      notificationEngine.dispatchAlert({
+        event: 'crash',
+        title: `Process Crash: ${crash.processName} on ${agentId}`,
+        message: `Process ${crash.processName} (PID ${crash.pmId}) crashed with exit code ${crash.exitCode || 0}. Last log: ${crash.logsBefore?.slice(-1)[0]?.message || 'N/A'}`,
+        nodeId: agentId,
+        processName: crash.processName,
+        timestamp: crash.crashedAt,
+      }).catch((err) => console.error('Failed to dispatch crash alert:', err));
+    },
   });
 
-  // 6. Initialize local AgentCore (Master is also an Agent)
+  // 7. Initialize local AgentCore (Master is also an Agent)
   const localAgentCore = createAgentCore({
     config: {
       hostname: 'master-node',
       port: port,
       dbPath: path.join(masterDataDir, 'agent.db'),
       logDir: path.join(masterDataDir, 'logs'),
+    },
+    onProcessCrash: (crash) => {
+      notificationEngine.dispatchAlert({
+        event: 'crash',
+        title: `Process Crash: ${crash.processName} on master-node`,
+        message: `Process ${crash.processName} (PID ${crash.pmId}) crashed with exit code ${crash.exitCode || 0}. Last log: ${crash.logsBefore?.slice(-1)[0]?.message || 'N/A'}`,
+        nodeId: 'master-node',
+        processName: crash.processName,
+        timestamp: crash.crashedAt,
+      }).catch((err) => console.error('Failed to dispatch local crash alert:', err));
     },
     logger: console,
   });
@@ -148,7 +175,7 @@ export const startMasterNode = async () => {
     lastSeenAt: Date.now(),
   });
 
-  // 7. Start Fastify Server
+  // 8. Start Fastify Server
   const webDistCandidates = [
     process.env.WEB_DIST_PATH,
     path.resolve(__dirname, '../../web/dist'),
@@ -174,6 +201,7 @@ export const startMasterNode = async () => {
     gitAppsRepo,
     deploymentsRepo,
     localAgentCore,
+    notificationEngine,
     webDistPath,
   });
 
@@ -204,6 +232,7 @@ export const startMasterNode = async () => {
     securityAuditService,
     nodeRegistry,
     relayProxy,
+    notificationEngine,
   };
 };
 

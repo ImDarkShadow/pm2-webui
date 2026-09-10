@@ -139,7 +139,14 @@ export const HostMetricsSchema = z.object({
 export const BoundedMetricsQuerySchema = z.object({
   from: z.coerce.number().int().optional(),
   to: z.coerce.number().int().optional(),
-  limit: z.coerce.number().int().positive().max(1000).default(500),
+  limit: z.coerce.number().int().positive().max(2000).default(500),
+  bucketMs: z.coerce.number().int().positive().optional(),
+});
+
+export const ErrorTraceQuerySchema = z.object({
+  processName: z.string().optional(),
+  status: z.enum(['unresolved', 'resolved', 'ignored', 'all']).default('unresolved'),
+  limit: z.coerce.number().int().positive().max(500).default(50),
 });
 
 // Log Schemas

@@ -16,6 +16,8 @@ export const WSMessageType = {
   HEARTBEAT_PONG: 'telemetry:pong',
   METRICS_FRAME: 'telemetry:metrics',
   PROCESS_STATE_CHANGE: 'telemetry:process_state',
+  PROCESS_CRASH_EVENT: 'telemetry:process_crash',
+  ERROR_TRACE_EVENT: 'telemetry:error_trace',
 
   // Command Execution (Master -> Agent / Agent -> Master)
   PROCESS_ACTION_REQ: 'cmd:process:action:req',

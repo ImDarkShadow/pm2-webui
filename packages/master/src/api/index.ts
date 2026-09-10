@@ -33,6 +33,7 @@ import {
   AllowedPm2Plugin,
   ClusterProcessInfo,
   OperationsTimelineEvent,
+  ErrorTraceQuerySchema,
 } from '@pm2-webui/shared';
 import crypto from 'node:crypto';
 import {
@@ -51,6 +52,8 @@ import { AuditRepo } from '../db/repos/auditRepo.js';
 import { SettingsRepo } from '../db/repos/settingsRepo.js';
 import { GitAppsRepo } from '../db/repos/gitAppsRepo.js';
 import { DeploymentsRepo } from '../db/repos/deploymentsRepo.js';
+import { NotificationEngine } from '../notifications/index.js';
+import { formatPrometheusMetrics } from '../metrics/prometheus.js';
 import { AgentCore } from '@pm2-webui/agent-core';
 
 export interface ApiRoutesDeps {
@@ -68,6 +71,7 @@ export interface ApiRoutesDeps {
   readonly gitAppsRepo: GitAppsRepo;
   readonly deploymentsRepo: DeploymentsRepo;
   readonly localAgentCore: AgentCore;
+  readonly notificationEngine?: NotificationEngine;
 }
 
 export interface RequestUserContext extends JwtUserPayload {
@@ -1253,6 +1257,34 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   // 5. Extended Bounded Metrics Endpoint (with Recharts time-series history)
+  // Prometheus Metrics Exposition Endpoint (/metrics and /api/v1/metrics/prometheus)
+  const prometheusHandler = async (req: FastifyRequest, reply: FastifyReply) => {
+    const nodesRes = nodeRegistry.listNodes();
+    const nodes = nodesRes.ok ? nodesRes.value : [];
+    const nodeMetrics = new Map<string, { host?: any; processes?: readonly any[] }>();
+
+    for (const node of nodes) {
+      if (node.id === localAgentCore.agentId) {
+        const cur = await localAgentCore.metricsCollector.collectCurrentMetrics();
+        if (cur.ok) {
+          nodeMetrics.set(node.id, { host: cur.value.host, processes: cur.value.processes });
+        }
+      } else {
+        const latest = relayProxy.getLatestMetricsForNode(node.id);
+        if (latest) {
+          nodeMetrics.set(node.id, { host: latest.host, processes: latest.processes });
+        }
+      }
+    }
+
+    const text = formatPrometheusMetrics({ nodes, nodeMetrics });
+    return reply.type('text/plain; version=0.0.4; charset=utf-8').send(text);
+  };
+
+  fastify.get('/metrics', prometheusHandler);
+  fastify.get('/api/v1/metrics/prometheus', prometheusHandler);
+
+  // 5. Extended Bounded Metrics Endpoint (with Recharts time-series history and dynamic SQL downsampling)
   fastify.get('/api/v1/nodes/:nodeId/metrics', async (req, reply) => {
     const user = await authenticate(req, reply);
     if (!user) return;
@@ -1274,9 +1306,24 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
     const fromTs = Math.max(parsed.data.from ?? now - 24 * 60 * 60 * 1000, now - maxRangeMs);
     const toTs = Math.min(parsed.data.to ?? now, now);
 
+    // Calculate effective bucket size for downsampling if not explicitly provided
+    const rangeSpan = toTs - fromTs;
+    let effectiveBucketMs = parsed.data.bucketMs;
+    if (!effectiveBucketMs) {
+      if (rangeSpan > 7 * 24 * 60 * 60 * 1000) {
+        effectiveBucketMs = 2 * 60 * 60 * 1000; // 2 hours for 7d - 30d
+      } else if (rangeSpan > 24 * 60 * 60 * 1000) {
+        effectiveBucketMs = 30 * 60 * 1000; // 30 mins for 24h - 7d
+      } else if (rangeSpan > 6 * 60 * 60 * 1000) {
+        effectiveBucketMs = 5 * 60 * 1000; // 5 mins for 6h - 24h
+      } else if (rangeSpan > 60 * 60 * 1000) {
+        effectiveBucketMs = 2 * 60 * 1000; // 2 mins for 1h - 6h
+      }
+    }
+
     if (nodeId === localAgentCore.agentId) {
       const currentRes = await localAgentCore.metricsCollector.collectCurrentMetrics();
-      const historyRes = localAgentCore.metricsRepo.queryRange(fromTs, toTs);
+      const historyRes = localAgentCore.metricsRepo.queryRange(fromTs, toTs, effectiveBucketMs);
       const dbHistory = historyRes.ok ? historyRes.value : [];
       const recentSamples = localAgentCore.metricsCollector.getRecentSamples();
 
@@ -1285,15 +1332,20 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
       for (const item of dbHistory) {
         map.set(item.timestamp, item);
       }
-      for (const item of recentSamples) {
-        map.set(item.timestamp, item);
+      if (toTs >= now - 15 * 60 * 1000 && !effectiveBucketMs) {
+        for (const item of recentSamples) {
+          map.set(item.timestamp, item);
+        }
       }
 
-      const combined = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+      let combined = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+      if (!effectiveBucketMs && combined.length > parsed.data.limit) {
+        combined = combined.slice(-parsed.data.limit);
+      }
 
       return reply.send({
         current: currentRes.ok ? currentRes.value : null,
-        history: combined.slice(-parsed.data.limit),
+        history: combined,
       });
     }
 
@@ -1301,6 +1353,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
     const tunnelRes = await relayProxy.executeTunnelRequest(nodeId, '/metrics', 'GET', {
       from: fromTs,
       to: toTs,
+      bucketMs: effectiveBucketMs,
+      limit: parsed.data.limit,
     });
     if (!tunnelRes.ok) {
       const latest = relayProxy.getLatestMetricsForNode(nodeId);
@@ -1315,6 +1369,177 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
         .send({ code: tunnelRes.error.code, message: tunnelRes.error.message });
     }
     return reply.send(tunnelRes.value);
+  });
+
+  // Per-Process Time-Series Metrics History
+  fastify.get('/api/v1/nodes/:nodeId/processes/:processName/metrics', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    const { nodeId, processName } = req.params as { nodeId: string; processName: string };
+    if (!isAuthorized(user, 'metrics:view', `node:${nodeId}`)) {
+      return reply
+        .status(403)
+        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view metrics' });
+    }
+
+    const parsed = BoundedMetricsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ code: 'VALIDATION_ERROR', errors: parsed.error.errors });
+    }
+
+    const now = Date.now();
+    const maxRangeMs = 30 * 24 * 60 * 60 * 1000;
+    const fromTs = Math.max(parsed.data.from ?? now - 24 * 60 * 60 * 1000, now - maxRangeMs);
+    const toTs = Math.min(parsed.data.to ?? now, now);
+
+    const rangeSpan = toTs - fromTs;
+    let effectiveBucketMs = parsed.data.bucketMs;
+    if (!effectiveBucketMs) {
+      if (rangeSpan > 7 * 24 * 60 * 60 * 1000) {
+        effectiveBucketMs = 2 * 60 * 60 * 1000;
+      } else if (rangeSpan > 24 * 60 * 60 * 1000) {
+        effectiveBucketMs = 30 * 60 * 1000;
+      } else if (rangeSpan > 6 * 60 * 60 * 1000) {
+        effectiveBucketMs = 5 * 60 * 1000;
+      } else if (rangeSpan > 60 * 60 * 1000) {
+        effectiveBucketMs = 2 * 60 * 1000;
+      }
+    }
+
+    if (nodeId === localAgentCore.agentId) {
+      const historyRes = localAgentCore.metricsRepo.queryProcessMetricsRange(
+        processName,
+        fromTs,
+        toTs,
+        effectiveBucketMs,
+      );
+      let history = historyRes.ok ? [...historyRes.value] : [];
+      const recent = localAgentCore.metricsCollector.getRecentProcessSamples(processName);
+
+      if (toTs >= now - 15 * 60 * 1000 && !effectiveBucketMs) {
+        const map = new Map<number, any>();
+        for (const item of history) map.set(item.timestamp, item);
+        for (const item of recent) map.set(item.timestamp, item);
+        history = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+      }
+
+      if (!effectiveBucketMs && history.length > parsed.data.limit) {
+        history = history.slice(-parsed.data.limit);
+      }
+
+      return reply.send({ history });
+    }
+
+    // Remote node tunnel
+    const tunnelRes = await relayProxy.executeTunnelRequest(
+      nodeId,
+      `/processes/${encodeURIComponent(processName)}/metrics`,
+      'GET',
+      {
+        from: fromTs,
+        to: toTs,
+        bucketMs: effectiveBucketMs,
+        limit: parsed.data.limit,
+      },
+    );
+    if (!tunnelRes.ok) {
+      return reply.send({ history: [] });
+    }
+    return reply.send({ history: tunnelRes.value || [] });
+  });
+
+  // Error Traces Query Endpoint
+  fastify.get('/api/v1/nodes/:nodeId/errors', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    const { nodeId } = req.params as { nodeId: string };
+    if (!isAuthorized(user, 'log:view', `node:${nodeId}`)) {
+      return reply
+        .status(403)
+        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view error traces' });
+    }
+
+    const parsed = ErrorTraceQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ code: 'VALIDATION_ERROR', errors: parsed.error.errors });
+    }
+
+    if (nodeId === localAgentCore.agentId) {
+      const tracesRes = localAgentCore.errorTraceRepo.list(parsed.data);
+      return reply.send(tracesRes.ok ? tracesRes.value : []);
+    }
+
+    // Remote node tunnel
+    const tunnelRes = await relayProxy.executeTunnelRequest(nodeId, '/errors', 'GET', parsed.data);
+    if (!tunnelRes.ok) {
+      return reply.send([]);
+    }
+    return reply.send(tunnelRes.value || []);
+  });
+
+  // Error Trace Resolve Endpoint
+  fastify.post('/api/v1/nodes/:nodeId/errors/:errorId/resolve', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    const { nodeId, errorId } = req.params as { nodeId: string; errorId: string };
+    if (!isAuthorized(user, 'process:manage', `node:${nodeId}`)) {
+      return reply
+        .status(403)
+        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to manage error traces' });
+    }
+
+    if (nodeId === localAgentCore.agentId) {
+      const res = localAgentCore.errorTraceRepo.resolve(errorId);
+      if (!res.ok) {
+        return reply.status(500).send({ code: res.error.code, message: res.error.message });
+      }
+      return reply.send({ success: true });
+    }
+
+    // Remote node tunnel
+    const tunnelRes = await relayProxy.executeTunnelRequest(
+      nodeId,
+      `/errors/${encodeURIComponent(errorId)}/resolve`,
+      'POST',
+    );
+    if (!tunnelRes.ok) {
+      return reply.status(502).send({ code: tunnelRes.error.code, message: tunnelRes.error.message });
+    }
+    return reply.send({ success: true });
+  });
+
+  // Process Crashes Query Endpoint
+  fastify.get('/api/v1/nodes/:nodeId/crashes', async (req, reply) => {
+    const user = await authenticate(req, reply);
+    if (!user) return;
+
+    const { nodeId } = req.params as { nodeId: string };
+    if (!isAuthorized(user, 'process:view', `node:${nodeId}`)) {
+      return reply
+        .status(403)
+        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view crash history' });
+    }
+
+    const { processName, limit } = req.query as { processName?: string; limit?: string };
+    const parsedLimit = limit ? Math.min(100, Math.max(1, parseInt(limit, 10))) : 50;
+
+    if (nodeId === localAgentCore.agentId) {
+      const crashRes = localAgentCore.crashRepo.list(processName, parsedLimit);
+      return reply.send(crashRes.ok ? crashRes.value : []);
+    }
+
+    // Remote node tunnel
+    const tunnelRes = await relayProxy.executeTunnelRequest(nodeId, '/crashes', 'GET', {
+      processName,
+      limit: parsedLimit,
+    });
+    if (!tunnelRes.ok) {
+      return reply.send([]);
+    }
+    return reply.send(tunnelRes.value || []);
   });
 
   // 6. PM2 Plugin Management (Strictly Allow-listed official plugins)
