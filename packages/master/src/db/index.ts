@@ -97,18 +97,6 @@ CREATE TABLE IF NOT EXISTS nodes (
   cpu_cores INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS node_groups (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  description TEXT,
-  created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS node_group_members (
-  node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-  group_id TEXT NOT NULL REFERENCES node_groups(id) ON DELETE CASCADE,
-  PRIMARY KEY (node_id, group_id)
-);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -13,17 +13,9 @@ export interface NodeState {
   readonly version: string;
   readonly enrolledAt: number;
   readonly lastSeenAt: number;
-  readonly groupIds?: readonly string[];
   readonly isMaster?: boolean;
   readonly isOnline?: boolean;
   readonly cpuCores?: number;
-}
-
-export interface NodeGroup {
-  readonly id: string;
-  readonly name: string;
-  readonly description?: string;
-  readonly createdAt: number;
 }
 
 // PM2 & Process Types

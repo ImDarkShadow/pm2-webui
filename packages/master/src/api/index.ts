@@ -165,6 +165,21 @@ export const registerApiRoutes = async (
     return canUserPerformAction({ user, action, targetScope });
   };
 
+  const authorizeUser = async (
+    req: FastifyRequest,
+    reply: FastifyReply,
+    action?: PermissionAction,
+    targetScope?: any,
+  ): Promise<RequestUserContext | null> => {
+    const user = await authenticate(req, reply);
+    if (!user) return null;
+    if (action && !isAuthorized(user, action, targetScope)) {
+      reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
+      return null;
+    }
+    return user;
+  };
+
   // Automated Worker Node Installation Script
   const serveInstallScript = async (req: FastifyRequest, reply: FastifyReply) => {
     const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
@@ -630,12 +645,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // 2. Node Registry Endpoints
   fastify.get('/api/v1/nodes', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'node:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'node:view')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const nodesRes = nodeRegistry.listNodes();
     if (!nodesRes.ok) {
@@ -688,14 +699,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/approve', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'node:approve');
     if (!user) return;
-
-    if (!isAuthorized(user, 'node:approve')) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Admin approval permission required' });
-    }
 
     const { nodeId } = req.params as { nodeId: string };
     const approveRes = nodeRegistry.approveNode(nodeId, user.sub, req.ip);
@@ -709,12 +714,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/reject', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'node:approve');
     if (!user) return;
-
-    if (!isAuthorized(user, 'node:approve')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Admin permission required' });
-    }
 
     const { nodeId } = req.params as { nodeId: string };
     const { reason = 'Rejected by administrator' } = (req.body as any) || {};
@@ -729,12 +730,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.delete('/api/v1/nodes/:nodeId', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'node:approve');
     if (!user) return;
-
-    if (!isAuthorized(user, 'node:approve')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Admin permission required' });
-    }
 
     const { nodeId } = req.params as { nodeId: string };
     if (localAgentCore && nodeId === localAgentCore.agentId) {
@@ -801,14 +798,13 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/processes/action', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(
+      req,
+      reply,
+      'process:manage',
+      `node:${(req.params as any).nodeId}`,
+    );
     if (!user) return;
-
-    if (!isAuthorized(user, 'process:manage', `node:${(req.params as any).nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to manage processes' });
-    }
 
     const { nodeId } = req.params as { nodeId: string };
     const parsed = ProcessActionRequestSchema.safeParse(req.body);
@@ -847,14 +843,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // 3.1 Unified Cross-Server Process View
   fastify.get('/api/v1/processes/all', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'process:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'process:view')) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view processes' });
-    }
 
     const nodesRes = nodeRegistry.listNodes();
     const allNodes = nodesRes.ok ? nodesRes.value : [];
@@ -896,14 +886,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/processes/batch-action', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'process:manage');
     if (!user) return;
-
-    if (!isAuthorized(user, 'process:manage')) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to manage processes' });
-    }
 
     const parsed = CrossNodeBatchActionSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1096,15 +1080,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Dynamic Cluster Scaling (Bounded by host CPU cores, audit-logged)
   fastify.post('/api/v1/nodes/:nodeId/processes/scale', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId } = req.params as { nodeId: string };
-    if (!isAuthorized(user, 'process:scale', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to scale processes' });
-    }
+    const user = await authorizeUser(req, reply, 'process:scale', `node:${nodeId}`);
+    if (!user) return;
 
     const parsed = ProcessScaleRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1166,15 +1144,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Custom Axm Action Trigger (Validated against advertised action list, audit-logged)
   fastify.post('/api/v1/nodes/:nodeId/processes/:target/trigger-action', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId, target } = req.params as { nodeId: string; target: string };
-    if (!isAuthorized(user, 'process:action_trigger', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to trigger process actions' });
-    }
+    const user = await authorizeUser(req, reply, 'process:action_trigger', `node:${nodeId}`);
+    if (!user) return;
 
     const parsed = ProcessActionTriggerRequestSchema.safeParse({ ...(req.body as any), target });
     if (!parsed.success) {
@@ -1244,14 +1216,13 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/processes/:target/reveal-env', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(
+      req,
+      reply,
+      'process:view_secrets',
+      `node:${(req.params as any).nodeId}`,
+    );
     if (!user) return;
-
-    if (!isAuthorized(user, 'process:view_secrets', `node:${(req.params as any).nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Permission to view process secrets required' });
-    }
 
     const { nodeId, target } = req.params as { nodeId: string; target: string };
     const { key } = (req.body as any) || {};
@@ -1293,12 +1264,13 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // 3.4 Process Git Integration & Deployment Endpoints
   fastify.get('/api/v1/nodes/:nodeId/processes/:processName/git/commits', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(
+      req,
+      reply,
+      'process:view',
+      `node:${(req.params as any).nodeId}`,
+    );
     if (!user) return;
-
-    if (!isAuthorized(user, 'process:view', `node:${(req.params as any).nodeId}`)) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Permission to view process required' });
-    }
 
     const { nodeId, processName } = req.params as { nodeId: string; processName: string };
     const limit = Math.min(Math.max(1, Number((req.query as any)?.limit || 15)), 50);
@@ -1339,12 +1311,13 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/processes/:processName/git/pull', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(
+      req,
+      reply,
+      'process:manage',
+      `node:${(req.params as any).nodeId}`,
+    );
     if (!user) return;
-
-    if (!isAuthorized(user, 'process:manage', `node:${(req.params as any).nodeId}`)) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Permission to manage processes required' });
-    }
 
     const { nodeId, processName } = req.params as { nodeId: string; processName: string };
     const { rebase = true } = (req.body as any) || {};
@@ -1397,12 +1370,13 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/processes/:processName/git/rollback', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(
+      req,
+      reply,
+      'process:manage',
+      `node:${(req.params as any).nodeId}`,
+    );
     if (!user) return;
-
-    if (!isAuthorized(user, 'process:manage', `node:${(req.params as any).nodeId}`)) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Permission to manage processes required' });
-    }
 
     const { nodeId, processName } = req.params as { nodeId: string; processName: string };
     const { commitHash } = (req.body as any) || {};
@@ -1476,14 +1450,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/processes/:processName/git/track', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:create');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:create')) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Permission to configure deployments required' });
-    }
 
     const { nodeId, processName } = req.params as { nodeId: string; processName: string };
 
@@ -1639,15 +1607,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // 5. Extended Bounded Metrics Endpoint (with Recharts time-series history and dynamic SQL downsampling)
   fastify.get('/api/v1/nodes/:nodeId/metrics', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId } = req.params as { nodeId: string };
-    if (!isAuthorized(user, 'metrics:view', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view metrics' });
-    }
+    const user = await authorizeUser(req, reply, 'metrics:view', `node:${nodeId}`);
+    if (!user) return;
 
     const parsed = BoundedMetricsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
@@ -1726,15 +1688,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Per-Process Time-Series Metrics History
   fastify.get('/api/v1/nodes/:nodeId/processes/:processName/metrics', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId, processName } = req.params as { nodeId: string; processName: string };
-    if (!isAuthorized(user, 'metrics:view', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view metrics' });
-    }
+    const user = await authorizeUser(req, reply, 'metrics:view', `node:${nodeId}`);
+    if (!user) return;
 
     const parsed = BoundedMetricsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
@@ -1804,15 +1760,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Error Traces Query Endpoint
   fastify.get('/api/v1/nodes/:nodeId/errors', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId } = req.params as { nodeId: string };
-    if (!isAuthorized(user, 'log:view', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view error traces' });
-    }
+    const user = await authorizeUser(req, reply, 'log:view', `node:${nodeId}`);
+    if (!user) return;
 
     const parsed = ErrorTraceQuerySchema.safeParse(req.query);
     if (!parsed.success) {
@@ -1834,15 +1784,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Error Trace Resolve Endpoint
   fastify.post('/api/v1/nodes/:nodeId/errors/:errorId/resolve', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId, errorId } = req.params as { nodeId: string; errorId: string };
-    if (!isAuthorized(user, 'process:manage', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to manage error traces' });
-    }
+    const user = await authorizeUser(req, reply, 'process:manage', `node:${nodeId}`);
+    if (!user) return;
 
     if (nodeId === localAgentCore.agentId) {
       const res = localAgentCore.errorTraceRepo.resolve(errorId);
@@ -1866,15 +1810,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Process Crashes Query Endpoint
   fastify.get('/api/v1/nodes/:nodeId/crashes', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId } = req.params as { nodeId: string };
-    if (!isAuthorized(user, 'process:view', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view crash history' });
-    }
+    const user = await authorizeUser(req, reply, 'process:view', `node:${nodeId}`);
+    if (!user) return;
 
     const { processName, limit } = req.query as { processName?: string; limit?: string };
     const parsedLimit = limit ? Math.min(100, Math.max(1, parseInt(limit, 10))) : 50;
@@ -1897,15 +1835,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // 6. PM2 Plugin Management (Strictly Allow-listed official plugins)
   fastify.get('/api/v1/nodes/:nodeId/plugins', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId } = req.params as { nodeId: string };
-    if (!isAuthorized(user, 'node:view', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view node plugins' });
-    }
+    const user = await authorizeUser(req, reply, 'node:view', `node:${nodeId}`);
+    if (!user) return;
 
     if (nodeId === localAgentCore.agentId) {
       const pluginsRes = await localAgentCore.pm2Manager.listPlugins();
@@ -1916,15 +1848,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/plugins/install', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId } = req.params as { nodeId: string };
-    if (!isAuthorized(user, 'plugin:manage', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Admin permission required to manage plugins' });
-    }
+    const user = await authorizeUser(req, reply, 'plugin:manage', `node:${nodeId}`);
+    if (!user) return;
 
     const parsed = PluginInstallRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1961,15 +1887,9 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/nodes/:nodeId/plugins/uninstall', async (req, reply) => {
-    const user = await authenticate(req, reply);
-    if (!user) return;
-
     const { nodeId } = req.params as { nodeId: string };
-    if (!isAuthorized(user, 'plugin:manage', `node:${nodeId}`)) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Admin permission required to manage plugins' });
-    }
+    const user = await authorizeUser(req, reply, 'plugin:manage', `node:${nodeId}`);
+    if (!user) return;
 
     const parsed = PluginUninstallRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -2007,14 +1927,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // 7. Audit Trail Endpoints
   fastify.get('/api/v1/audit', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'audit:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'audit:view')) {
-      return reply
-        .status(403)
-        .send({ code: 'FORBIDDEN', message: 'Insufficient permission to view audit logs' });
-    }
 
     const { page = 1, limit = 50, nodeId, action, status } = req.query as any;
     const auditRes = auditRepo.list({
@@ -2038,12 +1952,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.put('/api/v1/settings', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'settings:manage');
     if (!user) return;
-
-    if (!isAuthorized(user, 'settings:manage')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Admin permission required' });
-    }
 
     const parsed = GlobalSettingsSchema.partial().safeParse(req.body);
     if (!parsed.success) {
@@ -2056,24 +1966,16 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // 7. Git Deployments & Version Control Endpoints
   fastify.get('/api/v1/deploy/apps', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:view')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const appsRes = gitAppsRepo.list();
     return reply.send(appsRes.ok ? appsRes.value : []);
   });
 
   fastify.post('/api/v1/deploy/apps', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:create');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:create')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const parsed = CreateGitAppSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -2103,12 +2005,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.get('/api/v1/deploy/apps/:appId', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:view')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId } = req.params as { appId: string };
     const appRes = gitAppsRepo.findById(appId);
@@ -2120,12 +2018,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.put('/api/v1/deploy/apps/:appId', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:update');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:update')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId } = req.params as { appId: string };
     const parsed = UpdateGitAppSchema.safeParse(req.body);
@@ -2144,12 +2038,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.delete('/api/v1/deploy/apps/:appId', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:delete');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:delete')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId } = req.params as { appId: string };
     const appRes = gitAppsRepo.findById(appId);
@@ -2162,12 +2052,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/deploy/apps/:appId/deploy', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:trigger');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:trigger')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId } = req.params as { appId: string };
     const parsed = DeployTriggerSchema.safeParse(req.body || {});
@@ -2243,12 +2129,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.post('/api/v1/deploy/apps/:appId/rollback/:deployId', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:rollback');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:rollback')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId, deployId } = req.params as { appId: string; deployId: string };
     const appRes = gitAppsRepo.findById(appId);
@@ -2290,12 +2172,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Coordinated Multi-Node Cluster Deploy
   fastify.post('/api/v1/deploy/apps/:appId/cluster-deploy', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:trigger');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:trigger')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId } = req.params as { appId: string };
     const appRes = gitAppsRepo.findById(appId);
@@ -2389,12 +2267,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
 
   // Coordinated Multi-Node Cluster Rollback
   fastify.post('/api/v1/deploy/apps/:appId/cluster-rollback', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:rollback');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:rollback')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId } = req.params as { appId: string };
     const appRes = gitAppsRepo.findById(appId);
@@ -2470,12 +2344,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.get('/api/v1/deploy/apps/:appId/deployments', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:view')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { appId } = req.params as { appId: string };
     const listRes = deploymentsRepo.listByApp(appId, 50);
@@ -2483,12 +2353,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.get('/api/v1/deploy/deployments/:deployId', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:view')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const { deployId } = req.params as { deployId: string };
     const depRes = deploymentsRepo.findById(deployId);
@@ -2500,12 +2366,8 @@ echo -e "\\n\${GREEN}\${BOLD}Worker node installed and running!\${NC}\\n"
   });
 
   fastify.get('/api/v1/deploy/recent', async (req, reply) => {
-    const user = await authenticate(req, reply);
+    const user = await authorizeUser(req, reply, 'deploy:view');
     if (!user) return;
-
-    if (!isAuthorized(user, 'deploy:view')) {
-      return reply.status(403).send({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
-    }
 
     const listRes = deploymentsRepo.listRecent(20);
     return reply.send(listRes.ok ? listRes.value : []);

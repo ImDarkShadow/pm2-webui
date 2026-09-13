@@ -11,13 +11,6 @@ export const err = <E>(error: E): Result<never, E> => ({
   error,
 });
 
-export const isOk = <T, E>(
-  result: Result<T, E>,
-): result is { readonly ok: true; readonly value: T } => result.ok;
-
-export const isErr = <T, E>(
-  result: Result<T, E>,
-): result is { readonly ok: false; readonly error: E } => !result.ok;
 
 export type ErrorCode =
   | 'UNAUTHORIZED'

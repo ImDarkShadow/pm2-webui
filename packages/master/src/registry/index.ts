@@ -61,7 +61,6 @@ export interface NodeRegistry {
   readonly recordHeartbeat: (nodeId: string) => Result<void>;
   readonly listNodes: (filters?: {
     status?: NodeStatus;
-    groupId?: string;
   }) => Result<readonly NodeState[]>;
   readonly getNode: (nodeId: string) => Result<NodeState | null>;
 }
@@ -328,7 +327,6 @@ export const createNodeRegistry = (deps: NodeRegistryDeps): NodeRegistry => {
 
   const listNodes = (filters?: {
     status?: NodeStatus;
-    groupId?: string;
   }): Result<readonly NodeState[]> => {
     return nodesRepo.list(filters);
   };

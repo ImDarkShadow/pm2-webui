@@ -1,4 +1,4 @@
-import si from 'systeminformation';
+import fs from 'node:fs';
 import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import {
@@ -76,37 +76,77 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
     });
   };
 
+  // Track CPU ticks for CPU utilization calculation
+  let prevCpuTimes = os.cpus().map((c) => c.times);
+  const getCpuUsage = (): number => {
+    const currentCpus = os.cpus();
+    let totalIdle = 0;
+    let totalTick = 0;
+
+    currentCpus.forEach((cpu, i) => {
+      const prev = prevCpuTimes[i];
+      if (!prev) return;
+      const idle = cpu.times.idle - prev.idle;
+      const total =
+        cpu.times.user -
+        prev.user +
+        (cpu.times.nice - prev.nice) +
+        (cpu.times.sys - prev.sys) +
+        (cpu.times.irq - prev.irq) +
+        idle;
+      totalIdle += idle;
+      totalTick += total;
+    });
+
+    prevCpuTimes = currentCpus.map((c) => c.times);
+    if (totalTick <= 0) return 0;
+    const usage = 100 - (totalIdle / totalTick) * 100;
+    return Math.round(Math.max(0, Math.min(100, usage)) * 10) / 10;
+  };
+
   const collectHostMetrics = async (
     processes: readonly ProcessInfo[] = [],
   ): Promise<HostMetrics> => {
     const timestamp = Date.now();
     updateEventLoopMeasurement();
 
-    // Query systeminformation
-    const [cpuLoad, mem, fsSize, netStats] = await Promise.all([
-      si.currentLoad(),
-      si.mem(),
-      si.fsSize(),
-      si.networkStats(),
-    ]);
+    const cpuUsagePercent = getCpuUsage();
 
-    // Aggregate Disk
+    // Native Disk metrics via statfsSync
     let diskTotal = 0;
     let diskUsed = 0;
     let diskFree = 0;
-    for (const disk of fsSize) {
-      diskTotal += disk.size;
-      diskUsed += disk.used;
-      diskFree += disk.available;
+    try {
+      if (typeof fs.statfsSync === 'function') {
+        const stats = fs.statfsSync(process.cwd());
+        diskTotal = stats.bsize * stats.blocks;
+        diskFree = stats.bsize * stats.bavail;
+        diskUsed = Math.max(0, diskTotal - diskFree);
+      }
+    } catch {
+      // fallback
     }
     const diskUsagePercent = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0;
 
-    // Aggregate Network
+    // Native Network metrics via /proc/net/dev on Linux
     let totalRx = 0;
     let totalTx = 0;
-    for (const iface of netStats) {
-      totalRx += iface.rx_bytes;
-      totalTx += iface.tx_bytes;
+    try {
+      if (process.platform === 'linux' && fs.existsSync('/proc/net/dev')) {
+        const content = fs.readFileSync('/proc/net/dev', 'utf8');
+        const lines = content.split('\n');
+        for (let i = 2; i < lines.length; i++) {
+          const line = lines[i]?.trim();
+          if (!line || line.startsWith('lo:')) continue;
+          const parts = line.split(/\s+/);
+          const rx = Number(parts[1]);
+          const tx = Number(parts[9]);
+          if (!isNaN(rx)) totalRx += rx;
+          if (!isNaN(tx)) totalTx += tx;
+        }
+      }
+    } catch {
+      // fallback
     }
 
     let rxSec = 0;
@@ -147,35 +187,26 @@ export const createMetricsCollector = (deps: MetricsCollectorDeps): MetricsColle
         ? Number((totalEventLoop / eventLoopCount).toFixed(2))
         : measuredHostEventLoopDelayMs;
 
-    const totalMemBytes = mem?.total && mem.total > 0 ? mem.total : os.totalmem();
-    const freeMemBytes =
-      mem?.available && mem.available > 0
-        ? mem.available
-        : mem?.free && mem.free > 0
-          ? mem.free
-          : os.freemem();
-    const usedMemBytes =
-      mem?.active && mem.active > 0
-        ? mem.active
-        : mem?.used && mem.used > 0
-          ? mem.used
-          : Math.max(0, totalMemBytes - freeMemBytes);
+    const totalMemBytes = os.totalmem();
+    const freeMemBytes = os.freemem();
+    const usedMemBytes = Math.max(0, totalMemBytes - freeMemBytes);
+    const loadAvg = os.loadavg();
 
     return {
       timestamp,
       cpu: {
-        usagePercent: Math.round((cpuLoad?.currentLoad ?? 0) * 10) / 10,
-        cores: cpuLoad?.cpus?.length || os.cpus()?.length || 1,
-        load1m: cpuLoad?.avgLoad ?? os.loadavg()[0] ?? 0,
-        load5m: 0,
-        load15m: 0,
+        usagePercent: cpuUsagePercent,
+        cores: os.cpus()?.length || 1,
+        load1m: Number((loadAvg[0] ?? 0).toFixed(2)),
+        load5m: Number((loadAvg[1] ?? 0).toFixed(2)),
+        load15m: Number((loadAvg[2] ?? 0).toFixed(2)),
       },
       memory: {
         total: totalMemBytes,
         used: usedMemBytes,
         free: freeMemBytes,
-        swapTotal: mem?.swaptotal ?? 0,
-        swapUsed: mem?.swapused ?? 0,
+        swapTotal: 0,
+        swapUsed: 0,
       },
       disk: {
         total: diskTotal,

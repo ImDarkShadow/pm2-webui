@@ -11,35 +11,6 @@ export const PaginationQuerySchema = z.object({
 export const ConnectivityModeSchema = z.enum(['direct', 'relay', 'unknown']);
 export const NodeStatusSchema = z.enum(['online', 'offline', 'pending', 'rejected', 'revoked']);
 
-export const NodeStateSchema = z.object({
-  id: z.string().uuid(),
-  hostname: z.string().min(1),
-  ipAddress: z.string().min(1),
-  port: z.number().int().min(1).max(65535),
-  publicKey: z.string().min(32),
-  connectivityMode: ConnectivityModeSchema,
-  status: NodeStatusSchema,
-  version: z.string(),
-  enrolledAt: z.number(),
-  lastSeenAt: z.number(),
-  groupIds: z.array(z.string()).optional(),
-});
-
-export const NodeGroupSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-  createdAt: z.number(),
-});
-
-export const CreateNodeGroupSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-});
-
-export const AssignNodeGroupsSchema = z.object({
-  groupIds: z.array(z.string().uuid()),
-});
 
 // Process Action & Scaling Schemas
 export const ProcessActionSchema = z.enum(['start', 'stop', 'restart', 'reload', 'delete']);
@@ -97,44 +68,6 @@ export const PluginUninstallRequestSchema = z.object({
 });
 
 // Metrics Schemas
-export const HostCpuMetricsSchema = z.object({
-  usagePercent: z.number().min(0).max(100),
-  cores: z.number().int().positive(),
-  load1m: z.number().min(0),
-  load5m: z.number().min(0),
-  load15m: z.number().min(0),
-});
-
-export const HostMemoryMetricsSchema = z.object({
-  total: z.number().nonnegative(),
-  used: z.number().nonnegative(),
-  free: z.number().nonnegative(),
-  swapTotal: z.number().nonnegative(),
-  swapUsed: z.number().nonnegative(),
-});
-
-export const HostDiskMetricsSchema = z.object({
-  total: z.number().nonnegative(),
-  used: z.number().nonnegative(),
-  free: z.number().nonnegative(),
-  usagePercent: z.number().min(0).max(100),
-});
-
-export const HostNetworkMetricsSchema = z.object({
-  rxSec: z.number().nonnegative(),
-  txSec: z.number().nonnegative(),
-});
-
-export const HostMetricsSchema = z.object({
-  timestamp: z.number(),
-  cpu: HostCpuMetricsSchema,
-  memory: HostMemoryMetricsSchema,
-  disk: HostDiskMetricsSchema,
-  network: HostNetworkMetricsSchema,
-  clusterRps: z.number().nonnegative().optional(),
-  avgLatencyMs: z.number().nonnegative().optional(),
-  avgEventLoopDelayMs: z.number().nonnegative().optional(),
-});
 
 export const BoundedMetricsQuerySchema = z.object({
   from: z.coerce.number().int().optional(),
@@ -183,18 +116,6 @@ export const RefreshTokenRequestSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
-export const CreateUserSchema = z.object({
-  username: z.string().min(3).max(50),
-  email: z.string().email(),
-  password: z.string().min(8),
-  roleId: z.string().uuid(),
-});
-
-export const UpdateUserSchema = z.object({
-  email: z.string().email().optional(),
-  password: z.string().min(8).optional(),
-  roleId: z.string().uuid().optional(),
-});
 
 export const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
@@ -265,9 +186,6 @@ export const DeployTriggerSchema = z.object({
   commitHash: z.string().min(4).max(64).optional(),
 });
 
-export const RollbackSchema = z.object({
-  targetDeploymentId: z.string().uuid(),
-});
 
 // Security, 2FA & PAT Schemas
 export const Verify2FASchema = z.object({
